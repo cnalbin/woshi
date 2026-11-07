@@ -47,3 +47,18 @@ jobs:
             build/QingJi-unsigned.ipa.sha256
           if-no-files-found: error
           retention-days: 30
+      - name: Test real app onboarding, saving and process restart
+        run: bash scripts/test-ui.sh
+      - name: Export simulator screenshots
+        if: always()
+        run: |
+          if [ -d build/UITests.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/UITests.xcresult --output-path build/screenshots
+          fi
+      - name: Upload simulator screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: QingJi-simulator-screenshots
+          path: build/screenshots
+          if-no-files-found: warn

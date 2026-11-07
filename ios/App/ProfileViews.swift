@@ -49,6 +49,7 @@ struct ProfileEditor: View {
                 Section {
                     Button(onboarding ? "保存并开始记录" : "保存资料") { save() }
                         .buttonStyle(PrimaryButtonStyle()).disabled(profile == nil || store.storageUnavailable)
+                        .accessibilityIdentifier("profile.save")
                         .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
                 }
             }
@@ -161,6 +162,7 @@ struct SettingsView: View {
     @EnvironmentObject private var health: HealthService
     @State private var editProfile = false
     @State private var metabolism = false
+    @State private var showConsent = false
     var body: some View {
         NavigationStack {
             List {
@@ -195,9 +197,13 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("隐私与数据") {
-                    Toggle("允许主动发起 AI 分析", isOn: Binding(get: { store.snapshot.aiConsent }, set: { value in
-                        do { try store.setAIConsent(value) } catch { store.errorMessage = error.localizedDescription }
-                    }))
+                    if store.snapshot.aiConsent {
+                        Toggle("允许主动发起 AI 分析", isOn: Binding(get: { store.snapshot.aiConsent }, set: { value in
+                            do { try store.setAIConsent(value) } catch { store.errorMessage = error.localizedDescription }
+                        }))
+                    } else {
+                        Button("了解并启用 AI 分析") { showConsent = true }
+                    }
                     NavigationLink("隐私与使用说明") { PrivacyView() }
                     Text("记录和照片保存在本机并排除自动云备份。卸载前请自行保存重要记录；本版没有云端账号同步。")
                         .font(.caption).foregroundStyle(.secondary)
@@ -207,6 +213,11 @@ struct SettingsView: View {
             .navigationTitle("我的")
             .sheet(isPresented: $editProfile) { ProfileEditor(onboarding: false) }
             .sheet(isPresented: $metabolism) { MetabolismDetailView() }
+            .sheet(isPresented: $showConsent) {
+                AIConsentView {
+                    do { try store.setAIConsent(true) } catch { store.errorMessage = error.localizedDescription }
+                }
+            }
         }
     }
 }

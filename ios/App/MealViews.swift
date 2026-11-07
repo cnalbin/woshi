@@ -59,6 +59,7 @@ struct MealEditor: View {
                         }
                     }.onDelete { items.remove(atOffsets: $0) }
                     Button { editingFood = FoodItem(name: "", kcal: 0) } label: { Label("添加食物", systemImage: "plus") }
+                        .accessibilityIdentifier("food.add")
                         .disabled(items.count >= 30)
                 } header: { Text("食物与热量 · 点击修改，左滑删除") }
                 Section {
@@ -86,6 +87,7 @@ struct MealEditor: View {
                 if let error { Section { Text(error).foregroundStyle(.red).font(.subheadline) } }
                 Section {
                     Button(saving ? "正在保存…" : "确认并保存") { save() }.buttonStyle(PrimaryButtonStyle())
+                        .accessibilityIdentifier("meal.save")
                         .disabled(!valid || saving || store.storageUnavailable)
                         .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
                 }
@@ -163,9 +165,9 @@ struct FoodEditor: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("食物名称", text: $name)
+                    TextField("食物名称", text: $name).accessibilityIdentifier("food.name")
                     HStack { Text("份量（可选）"); TextField("克数", text: $grams).keyboardType(.decimalPad).multilineTextAlignment(.trailing); Text("克").foregroundStyle(.secondary) }
-                    HStack { Text("热量"); TextField("必填", text: $kcal).keyboardType(.decimalPad).multilineTextAlignment(.trailing); Text("kcal").foregroundStyle(.secondary) }
+                    HStack { Text("热量"); TextField("必填", text: $kcal).keyboardType(.decimalPad).multilineTextAlignment(.trailing).accessibilityIdentifier("food.kcal"); Text("kcal").foregroundStyle(.secondary) }
                 } footer: { Text("可直接输入包装标签或你确认的热量。份量未知时可以留空。") }
                 if let base = food.grams, base > 0, let next = NumberText.parse(grams), next > 0 {
                     Section {
@@ -176,7 +178,7 @@ struct FoodEditor: View {
             .navigationTitle("编辑食物").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("完成") { if let updated { onSave(updated); dismiss() } }.disabled(updated == nil) }
+                ToolbarItem(placement: .confirmationAction) { Button("完成") { if let updated { onSave(updated); dismiss() } }.disabled(updated == nil).accessibilityIdentifier("food.done") }
             }
             .onAppear {
                 name = food.name; grams = food.grams.map { $0.formatted(.number.grouping(.never).precision(.fractionLength(0...1))) } ?? ""

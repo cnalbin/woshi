@@ -36,6 +36,7 @@ struct TodayView: View {
                             .background(Theme.card, in: RoundedRectangle(cornerRadius: 16))
                             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.green, lineWidth: 1))
                     }
+                    .accessibilityIdentifier("meal.manual")
                 }.padding(.horizontal, 18).padding(.vertical, 10).background(.bar)
             }
             .refreshable { await health.refresh(for: day) }
@@ -72,7 +73,7 @@ struct TodayView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("已记录摄入").font(.headline)
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text(intake, format: .number.precision(.fractionLength(0))).font(.system(size: 43, weight: .bold, design: .rounded)).minimumScaleFactor(0.6)
+                        Text(intake, format: .number.precision(.fractionLength(0))).font(.system(size: 43, weight: .bold, design: .rounded)).minimumScaleFactor(0.6).accessibilityIdentifier("intake.total")
                         Text("kcal").font(.subheadline).foregroundStyle(.secondary)
                     }
                     Text("目标 \(Int(profile.dailyTarget)) kcal").font(.subheadline).foregroundStyle(.secondary)
@@ -123,7 +124,7 @@ struct TodayView: View {
             HStack { Text("当天饮食").font(.headline); Spacer(); Text("\(meals.count) 条记录").font(.caption).foregroundStyle(.secondary) }
             if meals.isEmpty {
                 VStack(spacing: 10) {
-                    Image(systemName: "bowl").font(.system(size: 32)).foregroundStyle(Theme.green)
+                    Image(systemName: "fork.knife").font(.system(size: 32)).foregroundStyle(Theme.green)
                     Text("从记录第一餐开始").font(.headline)
                     Text("拍张照片，或直接输入热量。也可以切换日期补记。")
                         .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)

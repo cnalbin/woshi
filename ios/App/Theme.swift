@@ -71,7 +71,7 @@ struct AIConsentView: View {
                     Text("App 不在服务端保存照片和资料，也不主动将照片用于训练；模型服务商的处理与保留政策以其条款为准。仅在你主动点击分析时发送。")
                     Text("AI 结果是估算，不能精确测量份量、油脂或代谢。保存前请核对食物、份量与热量。")
                     Link("查看 DeepSeek 隐私政策", destination: URL(string: "https://cdn.deepseek.com/policies/zh-CN/deepseek-privacy-policy.html")!)
-                    Button("同意并继续") { accept(); dismiss() }.buttonStyle(PrimaryButtonStyle())
+                    Button("同意并继续") { accept(); dismiss() }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("ai.consent.accept")
                     Button("暂不使用", role: .cancel) { dismiss() }.frame(maxWidth: .infinity)
                 }.padding(24)
             }

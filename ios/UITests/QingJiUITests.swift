@@ -43,6 +43,32 @@ final class QingJiUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["intake.total"].label, "125", "Record must survive a real process restart")
         app.tabBars.buttons["我的"].tap()
         capture("05-我的")
+        let service = app.buttons["service.open"]
+        reveal(service, in: app)
+        service.tap()
+        let address = app.textFields["service.address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 5))
+        address.tap()
+        address.typeText("http://localhost:8787")
+        let token = app.secureTextFields["service.token"]
+        token.tap()
+        token.typeText("ci-only-token-abcdefghijklmnopqrstuvwxyz")
+        app.buttons["service.save"].tap()
+        app.swipeDown()
+        app.swipeDown()
+        let metabolism = app.buttons["metabolism.open"]
+        reveal(metabolism, in: app)
+        metabolism.tap()
+        let analyze = app.buttons["metabolism.start"]
+        XCTAssertTrue(analyze.waitForExistence(timeout: 5))
+        analyze.tap()
+        let consent = app.buttons["ai.consent.accept"]
+        XCTAssertTrue(consent.waitForExistence(timeout: 5))
+        reveal(consent, in: app)
+        consent.tap()
+        let result = app.staticTexts["UI 集成测试：已通过真实 SSE 接收代谢结果。"]
+        XCTAssertTrue(result.waitForExistence(timeout: 30), "iOS SSE decoding must work through the real private backend")
+        capture("06-AI结果与综合代谢")
     }
 
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {

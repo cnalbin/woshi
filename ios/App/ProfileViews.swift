@@ -46,15 +46,15 @@ struct ProfileEditor: View {
                     }
                 }
                 if let error { Text(error).foregroundStyle(.red).font(.subheadline) }
-                Section {
-                    Button(onboarding ? "保存并开始记录" : "保存资料") { save() }
-                        .buttonStyle(PrimaryButtonStyle()).disabled(profile == nil || store.storageUnavailable)
-                        .accessibilityIdentifier("profile.save")
-                        .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
-                }
             }
             .navigationTitle(onboarding ? "欢迎使用轻记" : "编辑资料")
             .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                Button(onboarding ? "保存并开始记录" : "保存资料") { save() }
+                    .buttonStyle(PrimaryButtonStyle()).disabled(profile == nil || store.storageUnavailable)
+                    .accessibilityIdentifier("profile.save")
+                    .padding(.horizontal, 20).padding(.vertical, 12).background(.bar)
+            }
             .toolbar {
                 if !onboarding { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
                 ToolbarItemGroup(placement: .keyboard) { Spacer(); Button("完成") { UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil) } }
@@ -101,7 +101,7 @@ struct MetabolismDetailView: View {
                         if running {
                             AnalysisStatusView(progress: progress, startedAt: started) { cancel() }
                         } else {
-                            Button { begin() } label: { Label("AI 分析静息代谢", systemImage: "sparkles") }.buttonStyle(PrimaryButtonStyle())
+                            Button { begin() } label: { Label("AI 分析静息代谢", systemImage: "sparkles") }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("metabolism.start")
                         }
                         if let error { Text(error).foregroundStyle(.red).font(.subheadline) }
                         if let result = store.snapshot.metabolism {
@@ -186,10 +186,12 @@ struct SettingsView: View {
                     }
                     Section {
                         Button { metabolism = true } label: { Label("查看三种代谢结果与 AI 分析", systemImage: "sparkles") }
+                            .accessibilityIdentifier("metabolism.open")
                     }
                 }
                 Section("连接") {
                     NavigationLink { ServiceSettingsView() } label: { Label("AI 服务设置", systemImage: "network") }
+                        .accessibilityIdentifier("service.open")
                     Button { Task { await health.connect() } } label: {
                         HStack { Label("苹果健康", systemImage: "heart"); Spacer(); Text(health.hasRequested ? "检查连接" : "连接").foregroundStyle(.secondary) }
                     }
@@ -230,8 +232,8 @@ struct ServiceSettingsView: View {
     var body: some View {
         Form {
             Section {
-                TextField("https://api.example.com", text: $address).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                SecureField("后端访问令牌", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled()
+                TextField("https://api.example.com", text: $address).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).accessibilityIdentifier("service.address")
+                SecureField("后端访问令牌", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("service.token")
             } header: { Text("你的轻记后端") } footer: { Text("此处填写轻记后端地址和 APP_ACCESS_TOKEN，不能直接填写 DeepSeek 地址或 DeepSeek API Key。服务令牌安全保存在设备钥匙串。") }
             Section {
                 Button("保存配置") {
@@ -245,7 +247,7 @@ struct ServiceSettingsView: View {
                         UserDefaults.standard.set(clean, forKey: "serviceURL")
                         dismiss()
                     } catch { self.error = error.localizedDescription }
-                }
+                }.accessibilityIdentifier("service.save")
                 if let error { Text(error).font(.caption).foregroundStyle(.red) }
             }
             Section { Text("后端配置完成前，个人资料、公式计算和手动记录仍可正常使用。首次分析前会说明上传内容。") }

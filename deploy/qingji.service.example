@@ -1,0 +1,18 @@
+[Unit]
+Description=QingJi private AI API
+After=network.target
+
+[Service]
+Type=simple
+User=qingji
+WorkingDirectory=/opt/qingji/server
+EnvironmentFile=/opt/qingji/server/.env
+ExecStart=/usr/bin/node src/index.mjs
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

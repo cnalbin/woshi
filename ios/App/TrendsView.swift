@@ -10,6 +10,12 @@ struct TrendsView: View {
     private var calendar: Calendar { var c = Calendar.current; c.firstWeekday = 2; return c }
     private var component: Calendar.Component { period == 0 ? .weekOfYear : period == 1 ? .month : .year }
     private var interval: DateInterval { calendar.dateInterval(of: component, for: anchor)! }
+    private var periodTitle: String {
+        if period == 2 { return anchor.formatted(.dateTime.year()) }
+        if period == 1 { return anchor.formatted(.dateTime.year().month()) }
+        let last = calendar.date(byAdding: .day, value: -1, to: interval.end)!
+        return interval.start.formatted(.dateTime.month().day()) + " — " + last.formatted(.dateTime.month().day())
+    }
     private struct Day: Identifiable {
         var date: Date
         var intake: Double?
@@ -53,7 +59,7 @@ struct TrendsView: View {
                     HStack {
                         Button { move(-1) } label: { Image(systemName: "chevron.left") }
                         Spacer()
-                        Text(anchor.formatted(.dateTime.year().month()) + (period == 0 ? " · 本周" : ""))
+                        Text(periodTitle)
                         Spacer()
                         Button { move(1) } label: { Image(systemName: "chevron.right") }
                             .disabled(interval.end > Date())
@@ -77,6 +83,7 @@ struct TrendsView: View {
                                     .position(by: .value("项目", "消耗")).foregroundStyle(by: .value("项目", "消耗"))
                             }
                         }.chartForegroundStyleScale(["摄入": Theme.green, "消耗": Color.orange])
+                            .chartXScale(domain: interval.start...interval.end)
                             .chartXSelection(value: $selected).frame(height: 230)
                         Text("kcal · 缺失数据留空，各项日均按各自有数据的天数计算")
                             .font(.caption).foregroundStyle(.secondary)

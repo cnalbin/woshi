@@ -2,6 +2,23 @@ import XCTest
 @testable import QingJiCore
 
 final class CoreTests: XCTestCase {
+    func testIndependentOfflineEditsMergeAndDeletionPropagates() throws {
+        let first = Meal(consumedAt: Date(), kind: .lunch, items: [FoodItem(name: "A", kcal: 100)], source: "manual")
+        let second = Meal(consumedAt: Date(), kind: .dinner, items: [FoodItem(name: "B", kcal: 200)], source: "manual")
+        var base = AppSnapshot()
+        base.meals = [first]
+        var local = base
+        local.meals = []
+        var remote = base
+        remote.meals.append(second)
+        let merged = try SnapshotMerge.merge(base: base, local: local, remote: remote)
+        XCTAssertEqual(merged.meals.map(\.id), [second.id])
+        local = base
+        local.meals[0].items[0].kcal = 150
+        remote = base
+        remote.meals[0].items[0].kcal = 175
+        XCTAssertThrowsError(try SnapshotMerge.merge(base: base, local: local, remote: remote))
+    }
     func testLegacySnapshotRestoresWithoutActivityField() throws {
         let legacy = Data(#"{"schemaVersion":1,"meals":[],"aiConsent":true}"#.utf8)
         let snapshot = try JSONDecoder().decode(AppSnapshot.self, from: legacy)

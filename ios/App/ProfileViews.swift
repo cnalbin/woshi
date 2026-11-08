@@ -270,6 +270,12 @@ struct ServiceSettingsView: View {
                 }
             } else {
                 Section {
+                    Image("BrandIcon").resizable().frame(width: 64, height: 64)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                    Text("欢迎使用轻记").font(.largeTitle.bold())
+                    Text("创建账号，开始记录每一餐").foregroundStyle(.secondary)
+                }.listRowBackground(Color.clear)
+                Section {
                     TextField("https://api.example.com", text: $address)
                         .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
                         .accessibilityIdentifier("service.address")

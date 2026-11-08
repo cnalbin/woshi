@@ -221,8 +221,10 @@ final class AppStore: ObservableObject {
             let remote = try await client.read()
             let baselineFile = folder.appendingPathComponent("sync-baseline.json")
             let baseline = (try? JSONDecoder().decode(AppSnapshot.self, from: Data(contentsOf: baselineFile))) ?? AppSnapshot()
-            var merged = keepLocal ? snapshot : try SnapshotMerge.merge(base: baseline, local: snapshot,
-                                                                         remote: remote.snapshot ?? AppSnapshot())
+            var merged = snapshot
+            if !keepLocal {
+                merged = try SnapshotMerge.merge(base: baseline, local: snapshot, remote: remote.snapshot ?? AppSnapshot())
+            }
             let names = Set(merged.meals.compactMap(\.photoFilename))
             for reference in remote.photos where names.contains(reference.filename) {
                 guard Self.safePhotoName(reference.filename) else { throw StorageError.invalidData }

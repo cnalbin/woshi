@@ -133,10 +133,41 @@ struct AppSnapshot: Codable {
     var metabolism: MetabolismAssessment?
     var meals: [Meal] = []
     var aiConsent: Bool = false
+    var activityDays: [ActivityDay] = []
 
     func meals(on day: Date, calendar: Calendar = .current) -> [Meal] {
         meals.filter { calendar.isDate($0.consumedAt, inSameDayAs: day) }
             .sorted { $0.consumedAt < $1.consumedAt }
+    }
+}
+
+struct ActivityDay: Codable, Equatable, Identifiable {
+    var id: String
+    var day: String
+    var timeZone: String
+    var activeKcal: Double
+    var updatedAt: Date
+
+    static func key(for date: Date, timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+}
+
+extension AppSnapshot {
+    enum CodingKeys: String, CodingKey { case schemaVersion, profile, metabolism, meals, aiConsent, activityDays }
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try values.decode(Int.self, forKey: .schemaVersion)
+        profile = try values.decodeIfPresent(Profile.self, forKey: .profile)
+        metabolism = try values.decodeIfPresent(MetabolismAssessment.self, forKey: .metabolism)
+        meals = try values.decode([Meal].self, forKey: .meals)
+        aiConsent = try values.decodeIfPresent(Bool.self, forKey: .aiConsent) ?? false
+        activityDays = try values.decodeIfPresent([ActivityDay].self, forKey: .activityDays) ?? []
     }
 }
 

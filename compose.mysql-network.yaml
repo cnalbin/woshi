@@ -1,0 +1,9 @@
+services:
+  qingji:
+    networks:
+      - default
+      - mysql
+networks:
+  mysql:
+    external: true
+    name: "${QINGJI_MYSQL_NETWORK:?Set the existing Docker network name in the root .env}"

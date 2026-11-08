@@ -7,7 +7,9 @@ Type=simple
 User=qingji
 WorkingDirectory=/opt/qingji/server
 EnvironmentFile=/opt/qingji/server/.env
-ExecStart=/usr/bin/node src/index.mjs
+ExecStart=/opt/qingji/server/.venv/bin/uvicorn qingji.main:app --host 127.0.0.1 --port 8787 --no-access-log
+StateDirectory=qingji
+Environment=PHOTO_DIRECTORY=/var/lib/qingji/photos
 Restart=on-failure
 NoNewPrivileges=true
 PrivateTmp=true

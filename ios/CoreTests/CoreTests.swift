@@ -2,6 +2,12 @@ import XCTest
 @testable import QingJiCore
 
 final class CoreTests: XCTestCase {
+    func testLegacySnapshotRestoresWithoutActivityField() throws {
+        let legacy = Data(#"{"schemaVersion":1,"meals":[],"aiConsent":true}"#.utf8)
+        let snapshot = try JSONDecoder().decode(AppSnapshot.self, from: legacy)
+        XCTAssertTrue(snapshot.aiConsent)
+        XCTAssertTrue(snapshot.activityDays.isEmpty)
+    }
     func testAnalysisEventsWithoutEmptySeparatorsAsDeliveredByFoundation() throws {
         var parser = AnalysisEventParser()
         let lines = ["event: progress", "data: {\"stage\":\"analyzing\",\"message\":\"正在分析\"}",

@@ -30,6 +30,7 @@ struct ProfileEditor: View {
                                 .foregroundStyle(.secondary)
                         }.padding(.vertical, 12)
                     }.listRowBackground(Color.clear)
+                    NavigationLink { BackupView() } label: { Label("从旧手机的 NAS 备份恢复", systemImage: "arrow.down.circle") }
                 }
                 Section {
                     Picker("用于公式的性别", selection: $sex) { ForEach(BiologicalSex.allCases) { Text($0.label).tag($0) } }
@@ -192,10 +193,12 @@ struct SettingsView: View {
                 Section("连接") {
                     NavigationLink { ServiceSettingsView() } label: { Label("AI 服务设置", systemImage: "network") }
                         .accessibilityIdentifier("service.open")
+                    NavigationLink { BackupView() } label: { Label("NAS 备份与恢复", systemImage: "externaldrive") }
+                        .accessibilityIdentifier("backup.open")
                     Button { Task { await health.connect() } } label: {
                         HStack { Label("苹果健康", systemImage: "heart"); Spacer(); Text(health.hasRequested ? "检查连接" : "连接").foregroundStyle(.secondary) }
                     }
-                    Text("仅读取活动能量，不写入或上传健康数据。若没有数据，请在系统健康 App 中检查读取权限。")
+                    Text("读取每日活动能量。开启 NAS 备份后保存每日汇总，AI 分析不会收到运动数据。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("隐私与数据") {
@@ -207,10 +210,10 @@ struct SettingsView: View {
                         Button("了解并启用 AI 分析") { showConsent = true }
                     }
                     NavigationLink("隐私与使用说明") { PrivacyView() }
-                    Text("记录和照片保存在本机并排除自动云备份。卸载前请自行保存重要记录；本版没有云端账号同步。")
+                    Text("本机支持离线记录。启用 NAS 备份后，可以在换机时恢复。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section { Text("轻记 0.1.0 · 所有热量与代谢数据仅作估算参考").font(.caption).foregroundStyle(.secondary) }
+                Section { Text("轻记 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "") · 热量与代谢为估算值").font(.caption).foregroundStyle(.secondary) }
             }
             .navigationTitle("我的")
             .sheet(isPresented: $editProfile) { ProfileEditor(onboarding: false) }
@@ -225,6 +228,7 @@ struct SettingsView: View {
 }
 
 struct ServiceSettingsView: View {
+    @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     @State private var address = ""
     @State private var token = ""
@@ -245,6 +249,7 @@ struct ServiceSettingsView: View {
                     do {
                         try KeychainToken.save(cleanToken)
                         UserDefaults.standard.set(clean, forKey: "serviceURL")
+                        store.serviceConfigurationChanged()
                         dismiss()
                     } catch { self.error = error.localizedDescription }
                 }.accessibilityIdentifier("service.save")
@@ -260,10 +265,10 @@ struct PrivacyView: View {
     var body: some View {
         List {
             Section("本机数据") {
-                Text("个人资料、饮食、照片和 AI 结果保存在设备上，启用文件保护，不进行云同步并排除自动备份。可以在记录详情中删除单条饮食及其照片。服务令牌保存在本机钥匙串。")
+                Text("本机文件启用文件保护，服务令牌保存在钥匙串。你可以选择把个人资料、饮食、照片、代谢结果和活动汇总保存到自己的 NAS。")
             }
             Section("AI 上传") {
-                Text("仅在主动发起时发送本餐照片与补充说明，或年龄、性别、身高、体重。不会发送苹果健康数据和全部历史记录。轻记后端不持久保存请求；DeepSeek 的处理方式以其政策为准。关闭 AI 开关后不再发起新分析。")
+                Text("只有主动发起 AI 分析时，DeepSeek 才收到本餐照片与补充说明，或年龄、性别、身高、体重。NAS 备份与 AI 分析分别授权。DeepSeek 的处理方式以其政策为准。")
                 Link("DeepSeek 隐私政策", destination: URL(string: "https://cdn.deepseek.com/policies/zh-CN/deepseek-privacy-policy.html")!)
             }
             Section("估算边界") {

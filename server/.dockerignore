@@ -2,3 +2,7 @@
 .env.*
 test
 node_modules
+tests
+data
+__pycache__
+.pytest_cache

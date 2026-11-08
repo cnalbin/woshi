@@ -7,6 +7,7 @@ final class HealthService: ObservableObject {
     @Published var lastUpdated: Date?
     @Published var message = "连接苹果健康，查看活动消耗"
     @Published var refreshing = false
+    @Published private(set) var observation: ActivityDay?
     @Published private(set) var hasRequested = UserDefaults.standard.bool(forKey: "healthRequested")
     private let store = HKHealthStore()
     private var observer: HKObserverQuery?
@@ -74,6 +75,12 @@ final class HealthService: ObservableObject {
         else {
             message = "来自苹果健康 · 包含日常活动与训练"
             lastUpdated = Date()
+            if let energy = value.0 {
+                let zone = calendar.timeZone
+                let key = ActivityDay.key(for: start, timeZone: zone)
+                observation = ActivityDay(id: "\(key)|\(zone.identifier)", day: key,
+                                          timeZone: zone.identifier, activeKcal: energy, updatedAt: Date())
+            }
         }
     }
 }

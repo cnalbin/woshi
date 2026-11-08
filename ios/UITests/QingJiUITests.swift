@@ -85,6 +85,22 @@ final class QingJiUITests: XCTestCase {
         }
         XCTAssertTrue(completed, "iOS SSE decoding must work through the real private backend")
         capture("06-AI结果与综合代谢")
+        app.navigationBars["代谢分析"].buttons["完成"].tap()
+        let backup = app.buttons["backup.open"]
+        reveal(backup, in: app)
+        backup.tap()
+        let enable = app.switches["backup.enable"]
+        XCTAssertTrue(enable.waitForExistence(timeout: 8))
+        enable.tap()
+        app.alerts.buttons["启用备份"].tap()
+        let status = app.staticTexts["backup.status"]
+        let success = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "NAS 备份成功"), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [success], timeout: 20), .completed, "Backup status: \(status.label)")
+        app.buttons["backup.restore"].tap()
+        app.alerts.buttons["恢复"].tap()
+        let restored = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "已从 NAS 恢复 1 条"), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 20), .completed, "Restore status: \(status.label)")
+        capture("07-NAS备份和恢复")
     }
 
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {

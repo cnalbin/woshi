@@ -4,10 +4,17 @@ import SwiftUI
 struct QingJiApp: App {
     @StateObject private var store = AppStore()
     @StateObject private var health = HealthService()
+    @Environment(\.scenePhase) private var scenePhase
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(store).environmentObject(health).tint(Theme.green)
                 .task { health.start() }
+                .onChange(of: health.observation) { _, observation in
+                    if let observation { store.saveActivity(observation) }
+                }
+                .onChange(of: scenePhase, initial: true) { _, phase in
+                    if phase == .active { store.scheduleCloudBackup() }
+                }
         }
     }
 }

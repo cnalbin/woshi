@@ -15,3 +15,6 @@ node_modules/
 *.key
 *.pem
 __pycache__/
+.venv/
+.pytest_cache/
+server/data/

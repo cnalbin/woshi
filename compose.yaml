@@ -1,0 +1,21 @@
+services:
+  qingji:
+    build: ./server
+    restart: unless-stopped
+    env_file: ./server/.env
+    user: "${QINGJI_UID:-10001}:${QINGJI_GID:-10001}"
+    ports:
+      - "${QINGJI_BIND_ADDRESS:-127.0.0.1}:${QINGJI_PORT:-8787}:8787"
+    volumes:
+      - type: bind
+        source: "${QINGJI_PHOTO_PATH:?Set an absolute NAS photo directory in the root .env}"
+        target: /data/photos
+        bind:
+          create_host_path: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp

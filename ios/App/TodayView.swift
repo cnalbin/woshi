@@ -108,6 +108,14 @@ struct TodayView: View {
                 Spacer(minLength: 0)
                 if health.refreshing { ProgressView() }
                 else if let value = health.activeKcal { Text("\(Int(value.rounded())) kcal").font(.headline).monospacedDigit() }
+                else if let cached = store.snapshot.activityDays.first(where: {
+                    $0.day == ActivityDay.key(for: day) && $0.timeZone == TimeZone.current.identifier
+                }) {
+                    VStack(alignment: .trailing) {
+                        Text("\(Int(cached.activeKcal.rounded())) kcal").font(.headline).monospacedDigit()
+                        Text("已保存汇总").font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
                 else { Text("—").foregroundStyle(.secondary) }
             }
             if !health.hasRequested {

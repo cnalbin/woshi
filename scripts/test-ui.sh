@@ -2,9 +2,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 scripts/generate_project.py
-QINGJI_CI_MOCK=1 node server/test/fixtures/ci-server.mjs &
+PYTHONPATH=server QINGJI_CI_MOCK=1 python3 server/tests/simulator_server.py &
 MOCK_PID=$!
 trap 'kill "$MOCK_PID" 2>/dev/null || true' EXIT
+curl --fail --silent --retry 15 --retry-connrefused --retry-delay 1 http://localhost:8787/healthz
 SIMULATOR_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; ds=[d for v in json.load(sys.stdin)["devices"].values() for d in v if d["name"].startswith("iPhone") and d["isAvailable"]]; print(ds[0]["udid"])')
 xcrun simctl boot "$SIMULATOR_ID"
 xcrun simctl bootstatus "$SIMULATOR_ID" -b

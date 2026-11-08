@@ -17,21 +17,48 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-test-only
+          MYSQL_DATABASE: qingji
+          MYSQL_USER: qingji
+          MYSQL_PASSWORD: ci-mysql-test-only
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping -h 127.0.0.1 --silent" --health-interval=5s --health-timeout=4s --health-retries=20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: '22'
-      - run: npm run check
+          python-version: '3.13'
+      - run: python -m pip install -r server/requirements-dev.txt
+      - name: Test API and restore against MySQL 8.4
+        run: python -m pytest -q
         working-directory: server
-      - run: npm test
-        working-directory: server
+        env:
+          QINGJI_TEST_MYSQL_URL: mysql+pymysql://qingji:ci-mysql-test-only@127.0.0.1:3306/qingji?charset=utf8mb4
+      - name: Build and smoke-test NAS Docker image
+        run: |
+          docker build -t qingji-ci ./server
+          docker volume create qingji-ci-photos
+          docker run -d --name qingji-ci --network host -v qingji-ci-photos:/data/photos \
+            -e APP_ACCESS_TOKEN=ci-container-token-abcdefghijklmnopqrstuvwxyz -e MYSQL_HOST=127.0.0.1 \
+            -e MYSQL_PASSWORD=ci-mysql-test-only qingji-ci
+          trap 'docker logs qingji-ci; docker rm -f qingji-ci' EXIT
+          curl --fail --silent --retry 25 --retry-all-errors --retry-delay 2 http://127.0.0.1:8787/healthz
+          curl --fail --silent -H 'Authorization: Bearer ci-container-token-abcdefghijklmnopqrstuvwxyz' http://127.0.0.1:8787/v1/backup
 
   ios:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r server/requirements.txt
       - name: Xcode version
         run: xcodebuild -version
       - name: Test metabolism, validation, and calendar logic

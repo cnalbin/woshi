@@ -89,15 +89,19 @@ final class QingJiUITests: XCTestCase {
         let backup = app.buttons["backup.open"]
         reveal(backup, in: app)
         backup.tap()
-        let enable = app.switches["backup.enable"]
+        let enable = app.buttons["backup.enable"]
         XCTAssertTrue(enable.waitForExistence(timeout: 8))
         enable.tap()
-        app.alerts.buttons["启用备份"].tap()
+        let confirmEnable = app.alerts.buttons["启用备份"]
+        XCTAssertTrue(confirmEnable.waitForExistence(timeout: 8))
+        confirmEnable.tap()
         let status = app.staticTexts["backup.status"]
         let success = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "NAS 备份成功"), object: status)
         XCTAssertEqual(XCTWaiter.wait(for: [success], timeout: 20), .completed, "Backup status: \(status.label)")
         app.buttons["backup.restore"].tap()
-        app.alerts.buttons["恢复"].tap()
+        let confirmRestore = app.alerts.buttons["恢复"]
+        XCTAssertTrue(confirmRestore.waitForExistence(timeout: 8))
+        confirmRestore.tap()
         let restored = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "已从 NAS 恢复 1 条"), object: status)
         XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 20), .completed, "Restore status: \(status.label)")
         capture("07-NAS备份和恢复")

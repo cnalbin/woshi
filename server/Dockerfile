@@ -7,6 +7,8 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && useradd --uid 10001 --gid 10001 --no-create-home qingji \
     && install -d -o 10001 -g 10001 /data/photos
 COPY qingji ./qingji
+# NAS uploads can leave source files readable only by the image's root owner.
+RUN chmod -R u=rwX,go=rX /app/qingji
 USER 10001:10001
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/healthz', timeout=4).close()"]

@@ -41,6 +41,7 @@ jobs:
           QINGJI_TEST_MYSQL_URL: mysql+pymysql://qingji:ci-mysql-test-only@127.0.0.1:3306/qingji?charset=utf8mb4
       - name: Build and smoke-test NAS Docker image
         run: |
+          chmod -R go-rwx server/qingji
           docker build -t qingji-ci ./server
           docker volume create qingji-ci-photos
           docker run -d --name qingji-ci --network host -v qingji-ci-photos:/data/photos \

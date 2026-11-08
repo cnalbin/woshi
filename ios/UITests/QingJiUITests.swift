@@ -7,7 +7,7 @@ final class QingJiUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
                                 "-serviceURL", "http://localhost:8787"]
         app.launch()
-        login("first-user", in: app)
+        login("registered-user", registering: true, in: app)
         let profile = app.buttons["profile.open"]
         XCTAssertTrue(profile.waitForExistence(timeout: 15))
         profile.tap()
@@ -85,15 +85,15 @@ final class QingJiUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["intake.total"].label, "0")
         app.tabBars.buttons["我的"].tap()
         signOut(in: app)
-        login("first-user", in: app)
+        login("registered-user", in: app)
         XCTAssertTrue(manual.waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["intake.total"].label, "125")
     }
 
-    private func login(_ name: String, in app: XCUIApplication) {
+    private func login(_ name: String, registering: Bool = false, in app: XCUIApplication) {
         let mode = app.buttons["service.mode"]
         XCTAssertTrue(mode.waitForExistence(timeout: 8))
-        mode.tap()
+        if !registering { mode.tap() }
         let address = app.textFields["service.address"]
         XCTAssertTrue(address.waitForExistence(timeout: 8))
         if address.value as? String != "http://localhost:8787" {
@@ -106,6 +106,11 @@ final class QingJiUITests: XCTestCase {
         let password = app.secureTextFields["service.password"]
         password.tap()
         password.typeText("test-password-only")
+        if registering {
+            let confirm = app.secureTextFields["service.confirm"]
+            confirm.tap()
+            confirm.typeText("test-password-only")
+        }
         let submit = app.buttons["service.save"]
         reveal(submit, in: app)
         submit.tap()

@@ -27,7 +27,10 @@ struct TodayView: View {
                             .accessibilityIdentifier("profile.open")
                         Card {
                             Text("已记录摄入")
-                            Text("\(Int(intake)) kcal").font(.largeTitle.bold()).accessibilityIdentifier("intake.total")
+                            HStack(alignment: .firstTextBaseline) {
+                                Text("\(Int(intake))").font(.largeTitle.bold()).accessibilityIdentifier("intake.total")
+                                Text("kcal")
+                            }
                         }
                     }
                     Text(store.cloudMessage).font(.caption).foregroundStyle(.secondary)

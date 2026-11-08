@@ -15,9 +15,9 @@ final class QingJiUITests: XCTestCase {
         XCTAssertTrue(manual.waitForExistence(timeout: 10))
         capture("02-今日首页")
         manual.tap()
-        let add = app.buttons["food.add"]
-        XCTAssertTrue(add.waitForExistence(timeout: 5))
-        add.tap()
+        let addFood = app.buttons["food.add"]
+        XCTAssertTrue(addFood.waitForExistence(timeout: 5))
+        addFood.tap()
         let name = app.textFields["food.name"]
         XCTAssertTrue(name.waitForExistence(timeout: 5))
         name.tap()
@@ -60,7 +60,7 @@ final class QingJiUITests: XCTestCase {
             capture("服务配置失败")
             let debug = XCTAttachment(string: app.debugDescription)
             debug.lifetime = .keepAlways
-            add(debug)
+            self.add(debug)
         }
         XCTAssertTrue(configurationSaved, "Service settings failed: \(app.staticTexts["service.error"].label)")
         app.swipeDown()
@@ -89,7 +89,7 @@ final class QingJiUITests: XCTestCase {
             capture("未能找到目标控件")
             let debug = XCTAttachment(string: app.debugDescription)
             debug.lifetime = .keepAlways
-            add(debug)
+            self.add(debug)
         }
         XCTAssertTrue(element.isHittable)
     }
@@ -98,6 +98,6 @@ final class QingJiUITests: XCTestCase {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
-        add(attachment)
+        self.add(attachment)
     }
 }

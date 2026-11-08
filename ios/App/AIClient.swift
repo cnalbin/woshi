@@ -25,10 +25,11 @@ enum KeychainToken {
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
         let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound {
-            guard SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil) == errSecSuccess else {
-                throw AIError.message("无法安全保存访问令牌。")
+            let addStatus = SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil)
+            guard addStatus == errSecSuccess else {
+                throw AIError.message("无法安全保存访问令牌（\(addStatus)）。请确认应用签名与钥匙串权限。")
             }
-        } else if status != errSecSuccess { throw AIError.message("无法安全保存访问令牌。") }
+        } else if status != errSecSuccess { throw AIError.message("无法安全保存访问令牌（\(status)）。请确认应用签名与钥匙串权限。") }
     }
 }
 

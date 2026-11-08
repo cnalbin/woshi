@@ -54,6 +54,15 @@ final class QingJiUITests: XCTestCase {
         token.tap()
         token.typeText("ci-only-token-abcdefghijklmnopqrstuvwxyz")
         app.buttons["service.save"].tap()
+        let savedConfiguration = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["service.save"])
+        let configurationSaved = XCTWaiter.wait(for: [savedConfiguration], timeout: 5) == .completed
+        if !configurationSaved {
+            capture("服务配置失败")
+            let debug = XCTAttachment(string: app.debugDescription)
+            debug.lifetime = .keepAlways
+            add(debug)
+        }
+        XCTAssertTrue(configurationSaved, "Service settings failed: \(app.staticTexts["service.error"].label)")
         app.swipeDown()
         app.swipeDown()
         let metabolism = app.buttons["metabolism.open"]
@@ -75,6 +84,12 @@ final class QingJiUITests: XCTestCase {
         for _ in 0..<5 {
             if element.isHittable { return }
             app.swipeUp()
+        }
+        if !element.isHittable {
+            capture("未能找到目标控件")
+            let debug = XCTAttachment(string: app.debugDescription)
+            debug.lifetime = .keepAlways
+            add(debug)
         }
         XCTAssertTrue(element.isHittable)
     }

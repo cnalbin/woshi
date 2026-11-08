@@ -11,4 +11,4 @@ xcrun simctl bootstatus "$SIMULATOR_ID" -b
 xcodebuild -project ios/QingJi.xcodeproj -scheme QingJi -configuration Debug \
   -sdk iphonesimulator -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
   -derivedDataPath build/Simulator -resultBundlePath build/UITests.xcresult \
-  -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test
+  -parallel-testing-enabled NO CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES test

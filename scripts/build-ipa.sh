@@ -2,8 +2,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 scripts/generate_project.py
-# Normalize generated artwork to Apple's required, opaque 1024 px source icon.
-sips -z 1024 1024 ios/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png >/dev/null
 xcodebuild -project ios/QingJi.xcodeproj -scheme QingJi -configuration Release \
   -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/DerivedData \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build

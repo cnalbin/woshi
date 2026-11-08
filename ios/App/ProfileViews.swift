@@ -248,7 +248,7 @@ struct ServiceSettingsView: View {
                         dismiss()
                     } catch { self.error = error.localizedDescription }
                 }.accessibilityIdentifier("service.save")
-                if let error { Text(error).font(.caption).foregroundStyle(.red) }
+                if let error { Text(error).font(.caption).foregroundStyle(.red).accessibilityIdentifier("service.error") }
             }
             Section { Text("后端配置完成前，个人资料、公式计算和手动记录仍可正常使用。首次分析前会说明上传内容。") }
         }.navigationTitle("AI 服务设置").navigationBarTitleDisplayMode(.inline)

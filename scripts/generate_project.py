@@ -2,6 +2,8 @@
 from pathlib import Path
 import hashlib
 import json
+import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 IOS = ROOT / "ios"
@@ -17,6 +19,9 @@ def quoted(value):
 
 
 def generate():
+    if sys.platform == "darwin":
+        # Artwork is preserved; only normalize the app-icon build input to Apple's size.
+        subprocess.run(["sips", "-z", "1024", "1024", str(IOS / "App/Assets.xcassets/AppIcon.appiconset/AppIcon.png")], check=True, stdout=subprocess.DEVNULL)
     PROJECT.mkdir(exist_ok=True)
     sources = sorted([*IOS.glob("App/*.swift"), *IOS.glob("Core/*.swift")])
     resources = [IOS / "App/Assets.xcassets", IOS / "App/PrivacyInfo.xcprivacy"]
@@ -60,7 +65,7 @@ def generate():
     common = '''CLANG_ENABLE_MODULES = YES; SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 17.0;
         SWIFT_VERSION = 5.0; CLANG_ENABLE_OBJC_ARC = YES; ENABLE_USER_SCRIPT_SANDBOXING = YES;'''
     target = '''ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-        CODE_SIGN_ENTITLEMENTS = App/QingJi.entitlements; CODE_SIGN_STYLE = Automatic;
+        CODE_SIGN_ENTITLEMENTS = App/QingJi.entitlements; "CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = App/Simulator.entitlements; CODE_SIGN_STYLE = Automatic;
         CURRENT_PROJECT_VERSION = 1; MARKETING_VERSION = 0.1.0; GENERATE_INFOPLIST_FILE = NO;
         INFOPLIST_FILE = App/Info.plist; PRODUCT_BUNDLE_IDENTIFIER = com.cnalbin.qingji;
         PRODUCT_NAME = "$(TARGET_NAME)"; TARGETED_DEVICE_FAMILY = 1;

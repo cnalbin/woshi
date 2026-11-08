@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ProfileEditor: View {
     @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var session: AccountSession
     @Environment(\.dismiss) private var dismiss
     let onboarding: Bool
     @State private var sex = BiologicalSex.male
@@ -30,7 +31,12 @@ struct ProfileEditor: View {
                                 .foregroundStyle(.secondary)
                         }.padding(.vertical, 12)
                     }.listRowBackground(Color.clear)
-                    NavigationLink { BackupView() } label: { Label("从旧手机的 NAS 备份恢复", systemImage: "arrow.down.circle") }
+                    NavigationLink { ServiceSettingsView(store: store) } label: {
+                        Label(session.record == nil ? "登录 NAS 账号" : "管理 NAS 账号", systemImage: "person.crop.circle")
+                    }.accessibilityIdentifier("service.open")
+                    if session.record != nil {
+                        NavigationLink { BackupView() } label: { Label("从旧手机的 NAS 备份恢复", systemImage: "arrow.down.circle") }
+                    }
                 }
                 Section {
                     Picker("用于公式的性别", selection: $sex) { ForEach(BiologicalSex.allCases) { Text($0.label).tag($0) } }
@@ -139,7 +145,7 @@ struct MetabolismDetailView: View {
         }
     }
     private func begin() {
-        guard ServiceConfiguration.current.isValid else { error = "请先在“我的 → AI 服务设置”配置服务。"; return }
+        guard store.service.isValid else { error = "请先在“我的 → NAS 账号”登录。"; return }
         if !store.snapshot.aiConsent { consent = true } else { run() }
     }
     private func run() {
@@ -149,7 +155,7 @@ struct MetabolismDetailView: View {
         task = Task { @MainActor in
             defer { running = false }
             do {
-                let response = try await AIClient(configuration: .current).metabolism(profile: profile) { progress = $0 }
+                let response = try await AIClient(configuration: store.service).metabolism(profile: profile) { progress = $0 }
                 try Task.checkCancellation()
                 try store.saveAssessment(response, for: profile)
             } catch is CancellationError {} catch { self.error = error.localizedDescription }
@@ -161,6 +167,7 @@ struct MetabolismDetailView: View {
 struct SettingsView: View {
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var health: HealthService
+    @EnvironmentObject private var session: AccountSession
     @State private var editProfile = false
     @State private var metabolism = false
     @State private var showConsent = false
@@ -191,7 +198,9 @@ struct SettingsView: View {
                     }
                 }
                 Section("连接") {
-                    NavigationLink { ServiceSettingsView() } label: { Label("AI 服务设置", systemImage: "network") }
+                    NavigationLink { ServiceSettingsView(store: store) } label: {
+                        Label(session.record.map { "NAS 账号 · \($0.username)" } ?? "登录 NAS 账号", systemImage: "person.crop.circle")
+                    }
                         .accessibilityIdentifier("service.open")
                     NavigationLink { BackupView() } label: { Label("NAS 备份与恢复", systemImage: "externaldrive") }
                         .accessibilityIdentifier("backup.open")
@@ -228,36 +237,79 @@ struct SettingsView: View {
 }
 
 struct ServiceSettingsView: View {
-    @EnvironmentObject private var store: AppStore
-    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var session: AccountSession
+    var store: AppStore? = nil
     @State private var address = ""
-    @State private var token = ""
+    @State private var username = ""
+    @State private var password = ""
     @State private var error: String?
+    @State private var working = false
+    @State private var confirmLogout = false
+    @State private var confirmImport = false
+
     var body: some View {
         Form {
-            Section {
-                TextField("https://api.example.com", text: $address).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).accessibilityIdentifier("service.address")
-                SecureField("后端访问令牌", text: $token).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("service.token")
-            } header: { Text("你的轻记后端") } footer: { Text("此处填写轻记后端地址和 APP_ACCESS_TOKEN，不能直接填写 DeepSeek 地址或 DeepSeek API Key。服务令牌安全保存在设备钥匙串。") }
-            Section {
-                Button("保存配置") {
-                    let clean = address.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let cleanToken = token.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard ServiceConfiguration(baseURL: clean, token: cleanToken).isValid else {
-                        error = "请填写有效的 HTTPS 服务地址和令牌。"; return
-                    }
-                    do {
-                        try KeychainToken.save(cleanToken)
-                        UserDefaults.standard.set(clean, forKey: "serviceURL")
-                        store.serviceConfigurationChanged()
-                        dismiss()
-                    } catch { self.error = error.localizedDescription }
-                }.accessibilityIdentifier("service.save")
-                if let error { Text(error).font(.caption).foregroundStyle(.red).accessibilityIdentifier("service.error") }
+            if let account = session.record {
+                Section("当前账号") {
+                    LabeledContent("用户名", value: account.username)
+                    LabeledContent("NAS 地址", value: account.baseURL)
+                    Button("退出登录", role: .destructive) { confirmLogout = true }
+                        .accessibilityIdentifier("service.logout")
+                }
+                if store?.canImportLegacy == true {
+                    Section {
+                        Button("导入此手机的旧记录") { confirmImport = true }
+                    } footer: { Text("如果旧记录只存在这部手机，可将资料、饮食和照片复制到当前账号。已有 NAS 备份时，可以选择从 NAS 恢复。") }
+                }
+            } else {
+                Section {
+                    TextField("https://api.example.com", text: $address)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                        .accessibilityIdentifier("service.address")
+                    TextField("用户名", text: $username)
+                        .textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .accessibilityIdentifier("service.username")
+                    SecureField("密码", text: $password).textContentType(.password)
+                        .accessibilityIdentifier("service.password")
+                } header: { Text("登录你的轻记后端") } footer: {
+                    Text("账号由 NAS 管理员创建。登录后使用自己的记录、备份和 AI 分析。")
+                }
+                Section {
+                    Button("登录") { login() }.disabled(working || address.isEmpty || username.isEmpty || password.isEmpty)
+                        .accessibilityIdentifier("service.save")
+                    if working { ProgressView("正在验证账号…") }
+                }
             }
-            Section { Text("后端配置完成前，个人资料、公式计算和手动记录仍可正常使用。首次分析前会说明上传内容。") }
-        }.navigationTitle("AI 服务设置").navigationBarTitleDisplayMode(.inline)
-            .onAppear { let config = ServiceConfiguration.current; address = config.baseURL; token = config.token }
+            if let error { Text(error).font(.caption).foregroundStyle(.red).accessibilityIdentifier("service.error") }
+        }.navigationTitle("NAS 账号").navigationBarTitleDisplayMode(.inline)
+            .onAppear { if address.isEmpty { address = session.lastAddress } }
+            .alert("退出当前账号？", isPresented: $confirmLogout) {
+                Button("退出登录", role: .destructive) {
+                    do { try session.signOut() } catch { self.error = error.localizedDescription }
+                }
+                Button("取消", role: .cancel) {}
+            } message: { Text("本机记录会保留在当前账号，重新登录后可以继续使用。") }
+            .alert("导入本机旧记录？", isPresented: $confirmImport) {
+                Button("导入") {
+                    do { try store?.importLegacy() } catch { self.error = error.localizedDescription }
+                }
+                Button("取消", role: .cancel) {}
+            } message: { Text("旧记录会复制到这个账号。") }
+    }
+
+    private func login() {
+        error = nil
+        working = true
+        Task {
+            defer { working = false }
+            do {
+                try await session.signIn(address: address, username: username, password: password)
+                password = ""
+            } catch {
+                password = ""
+                self.error = error.localizedDescription
+            }
+        }
     }
 }
 
@@ -265,7 +317,7 @@ struct PrivacyView: View {
     var body: some View {
         List {
             Section("本机数据") {
-                Text("本机文件启用文件保护，服务令牌保存在钥匙串。你可以选择把个人资料、饮食、照片、代谢结果和活动汇总保存到自己的 NAS。")
+                Text("本机文件按账号隔离，登录凭证保存在钥匙串。你可以选择把个人资料、饮食、照片、代谢结果和活动汇总备份到自己的 NAS 账号。")
             }
             Section("AI 上传") {
                 Text("只有主动发起 AI 分析时，DeepSeek 才收到本餐照片与补充说明，或年龄、性别、身高、体重。NAS 备份与 AI 分析分别授权。DeepSeek 的处理方式以其政策为准。")

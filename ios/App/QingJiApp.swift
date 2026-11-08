@@ -2,20 +2,41 @@ import SwiftUI
 
 @main
 struct QingJiApp: App {
-    @StateObject private var store = AppStore()
-    @StateObject private var health = HealthService()
-    @Environment(\.scenePhase) private var scenePhase
+    @StateObject private var session = AccountSession()
     var body: some Scene {
         WindowGroup {
-            RootView().environmentObject(store).environmentObject(health).tint(Theme.green)
-                .task { health.start() }
-                .onChange(of: health.observation) { _, observation in
-                    if let observation { store.saveActivity(observation) }
+            Group {
+                if session.requiresLogin && session.record == nil {
+                    NavigationStack { ServiceSettingsView() }
+                } else {
+                    let workspace = session.record?.configuration.workspaceID ?? ""
+                    AccountWorkspace(workspace: workspace).id(workspace)
                 }
-                .onChange(of: scenePhase, initial: true) { _, phase in
-                    if phase == .active { store.scheduleCloudBackup() }
-                }
+            }.environmentObject(session).tint(Theme.green)
         }
+    }
+}
+
+struct AccountWorkspace: View {
+    @StateObject private var store: AppStore
+    @StateObject private var health: HealthService
+    @Environment(\.scenePhase) private var scenePhase
+
+    init(workspace: String) {
+        _store = StateObject(wrappedValue: AppStore(workspaceID: workspace))
+        _health = StateObject(wrappedValue: HealthService(workspaceID: workspace))
+    }
+
+    var body: some View {
+        RootView().environmentObject(store).environmentObject(health)
+            .task { health.start() }
+            .onDisappear { health.stop(); store.cancelCloudBackup() }
+            .onChange(of: health.observation) { _, observation in
+                if let observation { store.saveActivity(observation) }
+            }
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                if phase == .active { store.scheduleCloudBackup() }
+            }
     }
 }
 

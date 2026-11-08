@@ -8,11 +8,17 @@ final class HealthService: ObservableObject {
     @Published var message = "连接苹果健康，查看活动消耗"
     @Published var refreshing = false
     @Published private(set) var observation: ActivityDay?
-    @Published private(set) var hasRequested = UserDefaults.standard.bool(forKey: "healthRequested")
+    @Published private(set) var hasRequested: Bool
+    private let preference: String
     private let store = HKHealthStore()
     private var observer: HKObserverQuery?
     private var selectedDay = Date()
     private var refreshGeneration = UUID()
+
+    init(workspaceID: String) {
+        preference = workspaceID.isEmpty ? "healthRequested" : "healthRequested.\(workspaceID)"
+        hasRequested = UserDefaults.standard.bool(forKey: preference)
+    }
 
     var available: Bool { HKHealthStore.isHealthDataAvailable() }
 
@@ -22,7 +28,8 @@ final class HealthService: ObservableObject {
         do {
             try await store.requestAuthorization(toShare: [], read: [type])
             hasRequested = true
-            UserDefaults.standard.set(true, forKey: "healthRequested")
+            guard !Task.isCancelled else { return }
+            UserDefaults.standard.set(true, forKey: preference)
             observe()
             await refresh(for: selectedDay)
         } catch { message = "连接未完成，请在系统健康权限中检查" }
@@ -30,6 +37,13 @@ final class HealthService: ObservableObject {
 
     func start() {
         if hasRequested && available { observe() }
+    }
+
+    func stop() {
+        if let observer { store.stop(observer) }
+        observer = nil
+        refreshGeneration = UUID()
+        refreshing = false
     }
 
     private func observe() {

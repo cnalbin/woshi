@@ -45,11 +45,11 @@ jobs:
           docker build -t qingji-ci ./server
           docker volume create qingji-ci-photos
           docker run -d --name qingji-ci --network host -v qingji-ci-photos:/data/photos \
-            -e APP_ACCESS_TOKEN=ci-container-token-abcdefghijklmnopqrstuvwxyz -e MYSQL_HOST=127.0.0.1 \
+            -e MYSQL_HOST=127.0.0.1 \
             -e MYSQL_PASSWORD=ci-mysql-test-only qingji-ci
           trap 'docker logs qingji-ci; docker rm -f qingji-ci' EXIT
           curl --fail --silent --retry 25 --retry-all-errors --retry-delay 2 http://127.0.0.1:8787/healthz
-          curl --fail --silent -H 'Authorization: Bearer ci-container-token-abcdefghijklmnopqrstuvwxyz' http://127.0.0.1:8787/v1/backup
+          test "$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8787/v1/backup)" = 401
 
   ios:
     runs-on: macos-15

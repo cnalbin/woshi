@@ -3,7 +3,7 @@ import Security
 
 enum KeychainToken {
     private static let service = "com.cnalbin.qingji.api"
-    private static let account = "access-token"
+    private static let account = "nas-session"
     static func load() -> String {
         let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service, kSecAttrAccount as String: account,
@@ -36,16 +36,20 @@ enum KeychainToken {
 struct ServiceConfiguration {
     var baseURL: String
     var token: String
+    var workspaceID: String
     static var current: ServiceConfiguration {
-        .init(baseURL: UserDefaults.standard.string(forKey: "serviceURL") ?? "", token: KeychainToken.load())
+        AccountSession.Record.load()?.configuration ?? .init(baseURL: "", token: "", workspaceID: "")
     }
     var isValid: Bool {
-        guard let components = URLComponents(string: baseURL),
+        Self.validAddress(baseURL) && !token.isEmpty
+    }
+    static func validAddress(_ address: String) -> Bool {
+        guard let components = URLComponents(string: address),
               let host = components.host, !host.isEmpty,
               components.user == nil, components.password == nil,
               components.query == nil, components.fragment == nil else { return false }
         let local = ["localhost", "127.0.0.1", "::1"].contains(host)
-        return (components.scheme == "https" || (components.scheme == "http" && local)) && !token.isEmpty
+        return components.scheme == "https" || (components.scheme == "http" && local)
     }
 }
 
@@ -78,7 +82,7 @@ struct AIClient {
     private func request<Input: Encodable, Output: Decodable>(path: String, input: Input,
         progress: @escaping @MainActor (AnalysisProgress) -> Void) async throws -> Output {
         guard configuration.isValid, let base = URL(string: configuration.baseURL) else {
-            throw AIError.message("请先在“我的 → AI 服务设置”填写后端 HTTPS 地址和访问令牌。")
+            throw AIError.message("请先在“我的 → NAS 账号”登录。")
         }
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = "POST"
@@ -90,7 +94,7 @@ struct AIClient {
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.timeoutIntervalForRequest = 150
         sessionConfiguration.timeoutIntervalForResource = 160
-        let session = URLSession(configuration: sessionConfiguration)
+        let session = URLSession(configuration: sessionConfiguration, delegate: DirectServiceRequest(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         do {
             let (bytes, response) = try await session.bytes(for: request)
@@ -103,7 +107,7 @@ struct AIClient {
                     body.append(byte)
                 }
                 if let error = try? JSONDecoder().decode(ServiceError.self, from: body) { throw AIError.message(error.message) }
-                throw AIError.message("服务连接失败（\(http.statusCode)），请检查地址和令牌。")
+                throw AIError.message("服务连接失败（\(http.statusCode)），请检查 NAS 地址或重新登录。")
             }
             guard http.value(forHTTPHeaderField: "Content-Type")?.contains("text/event-stream") == true else {
                 throw AIError.message("服务返回格式不正确，请检查后端地址。")

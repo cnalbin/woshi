@@ -6,6 +6,11 @@ final class QingJiUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
+        let service = app.buttons["service.open"]
+        XCTAssertTrue(service.waitForExistence(timeout: 10))
+        reveal(service, in: app)
+        service.tap()
+        login("first-user", in: app)
         let start = app.buttons["profile.save"]
         XCTAssertTrue(start.waitForExistence(timeout: 15))
         capture("01-个人资料")
@@ -43,28 +48,6 @@ final class QingJiUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["intake.total"].label, "125", "Record must survive a real process restart")
         app.tabBars.buttons["我的"].tap()
         capture("05-我的")
-        let service = app.buttons["service.open"]
-        reveal(service, in: app)
-        service.tap()
-        let address = app.textFields["service.address"]
-        XCTAssertTrue(address.waitForExistence(timeout: 5))
-        address.tap()
-        address.typeText("http://localhost:8787")
-        let token = app.secureTextFields["service.token"]
-        token.tap()
-        token.typeText("ci-only-token-abcdefghijklmnopqrstuvwxyz")
-        app.buttons["service.save"].tap()
-        let savedConfiguration = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: app.buttons["service.save"])
-        let configurationSaved = XCTWaiter.wait(for: [savedConfiguration], timeout: 5) == .completed
-        if !configurationSaved {
-            capture("服务配置失败")
-            let debug = XCTAttachment(string: app.debugDescription)
-            debug.lifetime = .keepAlways
-            self.add(debug)
-        }
-        XCTAssertTrue(configurationSaved, "Service settings failed: \(app.staticTexts["service.error"].label)")
-        app.swipeDown()
-        app.swipeDown()
         let metabolism = app.buttons["metabolism.open"]
         reveal(metabolism, in: app)
         metabolism.tap()
@@ -105,6 +88,51 @@ final class QingJiUITests: XCTestCase {
         let restored = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "已从 NAS 恢复 1 条"), object: status)
         XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 20), .completed, "Restore status: \(status.label)")
         capture("07-NAS备份和恢复")
+        app.navigationBars.buttons.firstMatch.tap()
+        signOut(in: app)
+        login("second-user", in: app)
+        XCTAssertTrue(start.waitForExistence(timeout: 10), "A different account must open a new workspace")
+        reveal(start, in: app)
+        start.tap()
+        XCTAssertTrue(manual.waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["intake.total"].label, "0")
+        app.tabBars.buttons["我的"].tap()
+        signOut(in: app)
+        login("first-user", in: app)
+        XCTAssertTrue(manual.waitForExistence(timeout: 10))
+        XCTAssertEqual(app.staticTexts["intake.total"].label, "125")
+    }
+
+    private func login(_ name: String, in app: XCUIApplication) {
+        let address = app.textFields["service.address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 8))
+        if address.value as? String != "http://localhost:8787" {
+            address.tap()
+            address.typeText("http://localhost:8787")
+        }
+        let username = app.textFields["service.username"]
+        username.tap()
+        username.typeText(name)
+        let password = app.secureTextFields["service.password"]
+        password.tap()
+        password.typeText("test-password-only")
+        let submit = app.buttons["service.save"]
+        reveal(submit, in: app)
+        submit.tap()
+        let signedIn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: submit)
+        XCTAssertEqual(XCTWaiter.wait(for: [signedIn], timeout: 15), .completed, "NAS account login failed")
+    }
+
+    private func signOut(in app: XCUIApplication) {
+        let service = app.buttons["service.open"]
+        reveal(service, in: app)
+        service.tap()
+        let logout = app.buttons["service.logout"]
+        XCTAssertTrue(logout.waitForExistence(timeout: 8))
+        logout.tap()
+        let confirm = app.alerts.buttons["退出登录"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 8))
+        confirm.tap()
     }
 
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {

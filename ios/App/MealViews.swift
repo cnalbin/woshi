@@ -308,7 +308,7 @@ struct PhotoMealView: View {
     }
 
     private func begin() {
-        guard ServiceConfiguration.current.isValid else { error = "请先在“我的 → AI 服务设置”填写后端地址和访问令牌。"; return }
+        guard store.service.isValid else { error = "请先在“我的 → NAS 账号”登录。"; return }
         if !store.snapshot.aiConsent { consent = true } else { run() }
     }
     private func run() {
@@ -318,7 +318,7 @@ struct PhotoMealView: View {
         task = Task { @MainActor in
             defer { running = false }
             do {
-                let response = try await AIClient(configuration: .current).meal(image: imageData, note: note) { progress = $0 }
+                let response = try await AIClient(configuration: store.service).meal(image: imageData, note: note) { progress = $0 }
                 try Task.checkCancellation()
                 guard !response.items.isEmpty, response.items.count <= 20, response.items.map(\.foodItem).allSatisfy(\.isValid) else {
                     throw AIError.message("识别结果不完整，请重试或手动记录。")

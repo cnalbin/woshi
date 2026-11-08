@@ -16,10 +16,15 @@ final class AppStore: ObservableObject {
     private var generation = 0
     private let folder: URL
     private let file: URL
+    private let workspaceID: String
+    private let legacyFolder: URL
 
-    init() {
+    init(workspaceID: String) {
+        self.workspaceID = workspaceID
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        folder = documents.appendingPathComponent("QingJi", isDirectory: true)
+        legacyFolder = documents.appendingPathComponent("QingJi", isDirectory: true)
+        folder = workspaceID.isEmpty ? legacyFolder : documents.appendingPathComponent("QingJiAccounts", isDirectory: true)
+            .appendingPathComponent(workspaceID, isDirectory: true)
         file = folder.appendingPathComponent("records.json")
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -37,15 +42,42 @@ final class AppStore: ObservableObject {
             if let data = try? Data(contentsOf: folder.appendingPathComponent("cloud-state.json")),
                let state = try? JSONDecoder().decode(CloudState.self, from: data) {
                 cloudState = state
-                cloudEnabled = state.enabled
+                cloudEnabled = !workspaceID.isEmpty && state.enabled
                 cloudLastSynced = state.lastSynced
                 canUndoRestore = state.lastRestoreFolder != nil
-                cloudMessage = state.enabled ? "本机修改将在前台自动备份到 NAS" : "NAS 自动备份已关闭"
+                cloudMessage = cloudEnabled ? "本机修改将在前台自动备份到 NAS" : "NAS 自动备份已关闭"
             }
         } catch {
             storageUnavailable = true
             errorMessage = "无法读取本地记录，原始文件已保留。请保留应用数据并联系开发者恢复，暂时不要卸载。"
         }
+    }
+
+    var service: ServiceConfiguration {
+        let current = ServiceConfiguration.current
+        return current.workspaceID == workspaceID ? current : .init(baseURL: "", token: "", workspaceID: "")
+    }
+
+    var canImportLegacy: Bool {
+        guard !workspaceID.isEmpty, service.isValid,
+              UserDefaults.standard.string(forKey: "legacyMigrationWorkspace") == workspaceID else { return false }
+        return snapshot.profile == nil && snapshot.meals.isEmpty && snapshot.activityDays.isEmpty
+            && FileManager.default.fileExists(atPath: legacyFolder.appendingPathComponent("records.json").path)
+    }
+
+    func importLegacy() throws {
+        guard canImportLegacy, !storageUnavailable else { throw StorageError.unavailable }
+        let data = try Data(contentsOf: legacyFolder.appendingPathComponent("records.json"))
+        var copy = try JSONDecoder().decode(AppSnapshot.self, from: data)
+        guard copy.schemaVersion == 1, copy.profile?.isValid != false,
+              copy.meals.allSatisfy(\.isValid) else { throw StorageError.invalidData }
+        for name in Set(copy.meals.compactMap(\.photoFilename)) {
+            guard Self.safePhotoName(name) else { throw StorageError.invalidData }
+            try Data(contentsOf: legacyFolder.appendingPathComponent(name))
+                .write(to: folder.appendingPathComponent(name), options: [.atomic, .completeFileProtection])
+        }
+        copy.aiConsent = false
+        try commit(copy, schedule: false)
     }
 
     private func commit(_ next: AppSnapshot, schedule: Bool = true) throws {
@@ -129,8 +161,8 @@ final class AppStore: ObservableObject {
         canUndoRestore = cloudState.lastRestoreFolder != nil
     }
 
-    func serviceConfigurationChanged() {
-        let identity = CloudClient(configuration: .current).identity
+    private func serviceConfigurationChanged() {
+        let identity = service.workspaceID
         if cloudState.identity != identity {
             cloudTask?.cancel()
             cloudState.enabled = false
@@ -144,7 +176,7 @@ final class AppStore: ObservableObject {
     }
 
     func setCloudEnabled(_ value: Bool) {
-        guard !storageUnavailable else { return }
+        guard !storageUnavailable, service.isValid else { return }
         serviceConfigurationChanged()
         cloudState.enabled = value
         do {
@@ -155,7 +187,7 @@ final class AppStore: ObservableObject {
     }
 
     func scheduleCloudBackup() {
-        guard cloudEnabled, snapshot.profile != nil else { return }
+        guard cloudEnabled, snapshot.profile != nil, service.isValid else { return }
         if cloudSyncing { return }
         cloudTask?.cancel()
         cloudTask = Task { @MainActor in
@@ -164,6 +196,8 @@ final class AppStore: ObservableObject {
             await backupToCloud(onlyIfChanged: true)
         }
     }
+
+    func cancelCloudBackup() { cloudTask?.cancel() }
 
     private func backupSnapshot() throws -> (AppSnapshot, String) {
         var copy = snapshot
@@ -174,8 +208,9 @@ final class AppStore: ObservableObject {
     }
 
     func backupToCloud(onlyIfChanged: Bool = false) async {
-        guard !cloudSyncing, cloudEnabled, !storageUnavailable, snapshot.profile != nil else { return }
-        let client = CloudClient(configuration: .current)
+        let configuration = service
+        guard !cloudSyncing, cloudEnabled, !storageUnavailable, snapshot.profile != nil, configuration.isValid else { return }
+        let client = CloudClient(configuration: configuration)
         guard cloudState.identity == client.identity else { serviceConfigurationChanged(); return }
         cloudSyncing = true
         let savedGeneration = generation
@@ -208,7 +243,7 @@ final class AppStore: ObservableObject {
             try Task.checkCancellation()
             cloudMessage = "正在提交资料和记录…"
             let receipt = try await client.write(CloudSubmission(expectedRevision: remote.revision, snapshot: copy, photos: references))
-            guard client.identity == CloudClient(configuration: .current).identity else { return }
+            guard client.identity == service.workspaceID else { return }
             cloudState.revision = receipt.revision
             cloudState.lastSynced = Date()
             cloudState.lastSnapshotHash = hash
@@ -219,11 +254,12 @@ final class AppStore: ObservableObject {
     }
 
     func restoreFromCloud() async {
-        guard !cloudSyncing, !storageUnavailable else { return }
+        let configuration = service
+        guard !cloudSyncing, !storageUnavailable, configuration.isValid else { return }
         cloudTask?.cancel()
         cloudSyncing = true
         let savedGeneration = generation
-        let client = CloudClient(configuration: .current)
+        let client = CloudClient(configuration: configuration)
         let staging = folder.appendingPathComponent("restore-staging-\(UUID().uuidString)", isDirectory: true)
         defer { cloudSyncing = false; try? FileManager.default.removeItem(at: staging) }
         do {
@@ -240,7 +276,7 @@ final class AppStore: ObservableObject {
                 let data = try await client.download(digest: reference.sha256)
                 try data.write(to: staging.appendingPathComponent(reference.filename), options: [.atomic, .completeFileProtection])
             }
-            guard generation == savedGeneration, client.identity == CloudClient(configuration: .current).identity else {
+            guard generation == savedGeneration, client.identity == service.workspaceID else {
                 throw CloudError.message("下载期间本机记录或服务配置发生变化，请重新恢复；没有覆盖本机数据。")
             }
             let recoveryName = "before-restore-\(UUID().uuidString)"

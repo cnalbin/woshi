@@ -1,7 +1,7 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool, StrictFloat, StrictInt, model_validator
 
 Number = Annotated[StrictFloat, Field(allow_inf_nan=False)]
 PhotoName = Annotated[str, Field(pattern=r"^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}\.jpg$")]
@@ -10,6 +10,12 @@ Digest = Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
 
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+class LoginInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    username: str = Field(min_length=3, max_length=64)
+    password: SecretStr = Field(min_length=1, max_length=128)
 
 
 class ProfileInput(Model):

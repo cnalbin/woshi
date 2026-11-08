@@ -12,11 +12,12 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import ValidationError
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from .accounts import Accounts
 from .config import Settings
-from .schemas import BackupWrite, Digest, MealInput, MealResult, MetabolismResult, ProfileInput
+from .schemas import BackupWrite, Digest, LoginInput, MealInput, MealResult, MetabolismResult, ProfileInput
 from .storage import Storage, StorageError, image_mime
 
 MEAL_PROMPT = """你是饮食记录助手。识别照片中的食物，估计整份食物的可食用熟重和热量，返回严格 JSON。
@@ -38,16 +39,31 @@ def failure(status: int, code: str, message: str) -> JSONResponse:
 
 class Authentication:
     """Reject unauthorized uploads before reading bodies; no public static photo URLs."""
-    def __init__(self, app, token: str):
-        self.app, self.digest = app, hashlib.sha256(f"Bearer {token}".encode()).digest()
+    def __init__(self, app, accounts: Accounts, legacy_token: str | None):
+        self.app, self.accounts = app, accounts
+        self.legacy_digest = hashlib.sha256(f"Bearer {legacy_token}".encode()).digest() if legacy_token else None
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] == "http" and not (scope["path"] == "/healthz" and scope["method"] == "GET"):
+        public = {("/healthz", "GET"), ("/v1/auth/login", "POST")}
+        if scope["type"] == "http" and (scope["path"], scope["method"]) not in public:
             headers = dict(scope.get("headers", []))
-            candidate = hashlib.sha256(headers.get(b"authorization", b"")).digest()
-            if not hmac.compare_digest(self.digest, candidate):
-                await failure(401, "UNAUTHORIZED", "服务访问令牌不正确，请检查 NAS 服务设置。")(scope, receive, send)
+            authorization = headers.get(b"authorization", b"")
+            owner, token = None, None
+            if self.legacy_digest and hmac.compare_digest(self.legacy_digest, hashlib.sha256(authorization).digest()):
+                owner = self.accounts.legacy_owner
+            elif authorization.startswith(b"Bearer ") and len(authorization) == 50:
+                try:
+                    token = authorization[7:].decode("ascii")
+                    owner = await asyncio.to_thread(self.accounts.resolve, token)
+                except UnicodeDecodeError:
+                    pass
+                except SQLAlchemyError:
+                    await failure(503, "DATABASE_UNAVAILABLE", "NAS 数据库暂不可用。")(scope, receive, send)
+                    return
+            if owner is None:
+                await failure(401, "UNAUTHORIZED", "请登录 NAS 账号，或重新登录。")(scope, receive, send)
                 return
+            scope.setdefault("state", {}).update(owner=owner, session_token=token)
         await self.app(scope, receive, send)
 
 
@@ -73,12 +89,12 @@ async def json_input(request: Request, schema, limit: int = 6_100_000):
 def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
     settings.check_secrets()
     if engine is None:
-        connect_args = {"connect_timeout": 10}
-        if settings.mysql_ssl_ca:
-            connect_args["ssl"] = {"ca": settings.mysql_ssl_ca}
-        engine = create_engine(settings.connection_url(), pool_pre_ping=True, pool_recycle=1800,
-                               pool_size=3, max_overflow=2, hide_parameters=True, connect_args=connect_args)
+        engine = settings.engine()
     storage = Storage(engine, settings.photo_directory, settings.owner_id)
+    accounts = Accounts(engine, settings.owner_id)
+
+    def account_storage(request: Request) -> Storage:
+        return Storage(engine, settings.photo_directory, request.state.owner)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -86,12 +102,17 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
         yield
         await asyncio.to_thread(engine.dispose)
 
-    app = FastAPI(title="轻记 NAS API", version="0.2.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
-    app.add_middleware(Authentication, token=settings.app_access_token.get_secret_value())
+    app = FastAPI(title="轻记 NAS API", version="0.3.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    legacy_token = settings.app_access_token.get_secret_value() if settings.enable_legacy_token else None
+    app.add_middleware(Authentication, accounts=accounts, legacy_token=legacy_token)
     app.state.storage = storage
+    app.state.accounts = accounts
     app.state.active = 0
     app.state.quota_started = time.monotonic()
     app.state.quota_count = 0
+    login_window = time.monotonic()
+    login_count = 0
+    login_active = 0
 
     @app.exception_handler(StorageError)
     async def storage_error(_, error):
@@ -111,24 +132,47 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
             connection.execute(text("SELECT 1"))
         return {"status": "ok"}
 
+    @app.post("/v1/auth/login")
+    async def login(request: Request):
+        nonlocal login_window, login_count, login_active
+        value = await json_input(request, LoginInput, 4096)
+        if time.monotonic() - login_window >= 60:
+            login_window, login_count = time.monotonic(), 0
+        if login_count >= 30 or login_active >= 3:
+            raise StorageError(429, "LOGIN_RATE_LIMIT", "登录尝试过多，请稍后再试。")
+        login_count += 1
+        login_active += 1
+        try:
+            result = await asyncio.to_thread(accounts.login, value.username.strip().lower(), value.password.get_secret_value())
+        finally:
+            login_active -= 1
+        if result is None:
+            raise StorageError(401, "INVALID_CREDENTIALS", "账号或密码错误。")
+        return JSONResponse(result, headers={"Cache-Control": "no-store"})
+
+    @app.post("/v1/auth/logout", status_code=204)
+    def logout(request: Request):
+        if request.state.session_token:
+            accounts.logout(request.state.session_token)
+
     @app.get("/v1/backup")
-    def get_backup():
-        return JSONResponse(storage.read(), headers={"Cache-Control": "no-store"})
+    def get_backup(request: Request):
+        return JSONResponse(account_storage(request).read(), headers={"Cache-Control": "no-store"})
 
     @app.put("/v1/backup")
     async def put_backup(request: Request):
         value = await json_input(request, BackupWrite, 24_000_000)
-        return await asyncio.to_thread(storage.write, value)
+        return await asyncio.to_thread(account_storage(request).write, value)
 
     @app.put("/v1/photos/{digest}")
     async def put_photo(digest: Digest, request: Request):
         data = await body(request, 4_000_000)
-        await asyncio.to_thread(storage.put_photo, digest, data)
+        await asyncio.to_thread(account_storage(request).put_photo, digest, data)
         return {"sha256": digest}
 
     @app.get("/v1/photos/{digest}")
-    def get_photo(digest: Digest):
-        path, mime = storage.get_photo(digest)
+    def get_photo(digest: Digest, request: Request):
+        path, mime = account_storage(request).get_photo(digest)
         return FileResponse(path, media_type=mime, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     async def provider(kind, content):

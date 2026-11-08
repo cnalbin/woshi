@@ -24,7 +24,10 @@ if __name__ == "__main__":
     if os.environ.get("QINGJI_CI_MOCK") != "1":
         raise SystemExit("Simulator fixture only")
     with TemporaryDirectory() as folder:
-        settings = Settings(app_access_token="ci-only-token-abcdefghijklmnopqrstuvwxyz", deepseek_api_key="fake-key",
+        settings = Settings(deepseek_api_key="fake-key",
                             photo_directory=Path(folder) / "photos", _env_file=None)
         api = create_app(settings, create_engine(f"sqlite:///{folder}/test.db"), httpx.MockTransport(fake_model))
+        api.state.storage.initialize()
+        for username in ("first-user", "second-user"):
+            api.state.accounts.create(username, "test-password-only")
         uvicorn.run(api, host="127.0.0.1", port=8787, access_log=False)

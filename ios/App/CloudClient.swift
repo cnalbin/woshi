@@ -35,7 +35,7 @@ enum CloudError: LocalizedError {
 
 struct CloudClient {
     let configuration: ServiceConfiguration
-    var identity: String { Self.hash(Data((configuration.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "|" + configuration.token).utf8)) }
+    var identity: String { configuration.workspaceID }
     static func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
 
     func read() async throws -> CloudEnvelope {
@@ -58,7 +58,7 @@ struct CloudClient {
     private func request(_ path: String, method: String, data: Data? = nil,
                          contentType: String = "application/json", maximum: Int = 24_000_000) async throws -> Data {
         guard configuration.isValid, let base = URL(string: configuration.baseURL) else {
-            throw CloudError.message("请先配置 NAS 服务 HTTPS 地址和访问令牌。")
+            throw CloudError.message("请先登录 NAS 账号。")
         }
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = method
@@ -66,7 +66,7 @@ struct CloudClient {
         request.timeoutInterval = 90
         request.setValue("Bearer \(configuration.token)", forHTTPHeaderField: "Authorization")
         if data != nil { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
-        let session = URLSession(configuration: .ephemeral)
+        let session = URLSession(configuration: .ephemeral, delegate: DirectServiceRequest(), delegateQueue: nil)
         defer { session.invalidateAndCancel() }
         let (bytes, response) = try await session.bytes(for: request)
         guard let response = response as? HTTPURLResponse else { throw CloudError.message("NAS 响应无效。") }

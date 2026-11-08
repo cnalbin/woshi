@@ -27,11 +27,11 @@ struct BackupView: View {
     var body: some View {
         Form {
             Section {
-                NavigationLink { ServiceSettingsView() } label: { Label("NAS 服务地址与令牌", systemImage: "network") }
+                NavigationLink { ServiceSettingsView(store: store) } label: { Label("NAS 账号", systemImage: "person.crop.circle") }
                 Button(store.cloudEnabled ? "关闭自动备份" : "启用自动备份") {
                     if store.cloudEnabled { store.setCloudEnabled(false) }
                     else { confirmation = .enable }
-                }.disabled(store.cloudSyncing || store.snapshot.profile == nil || !ServiceConfiguration.current.isValid)
+                }.disabled(store.cloudSyncing || store.snapshot.profile == nil || !store.service.isValid)
                     .accessibilityIdentifier("backup.enable")
                 if store.cloudSyncing { ProgressView().accessibilityLabel("正在处理 NAS 数据") }
                 Text(store.cloudMessage).accessibilityIdentifier("backup.status")
@@ -46,13 +46,13 @@ struct BackupView: View {
             }
             Section {
                 Button("从 NAS 恢复") { confirmation = .restore }
-                    .disabled(store.cloudSyncing || !ServiceConfiguration.current.isValid)
+                    .disabled(store.cloudSyncing || !store.service.isValid)
                     .accessibilityIdentifier("backup.restore")
                 if store.canUndoRestore {
                     Button("撤销上次恢复") { confirmation = .undo }.disabled(store.cloudSyncing)
                 }
             } footer: {
-                Text("换机时填写同一 NAS 服务地址和令牌即可恢复。恢复前会保存本机副本。若 NAS 版本已变化，备份会停止，以免覆盖其他设备的记录。")
+                Text("换机时登录同一 NAS 的同一账号即可恢复。恢复前会保存本机副本。若 NAS 版本已变化，备份会停止，以免覆盖其他设备的记录。")
             }
         }
         .navigationTitle("NAS 备份与恢复").navigationBarTitleDisplayMode(.inline)

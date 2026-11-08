@@ -6,7 +6,7 @@ struct QingJiApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if session.requiresLogin && session.record == nil {
+                if session.record == nil {
                     NavigationStack { ServiceSettingsView() }
                 } else {
                     let workspace = session.record?.configuration.workspaceID ?? ""
@@ -29,7 +29,19 @@ struct AccountWorkspace: View {
 
     var body: some View {
         RootView().environmentObject(store).environmentObject(health)
-            .task { health.start() }
+            .task {
+                health.start()
+                while !Task.isCancelled {
+                    if scenePhase == .active { await store.backupToCloud() }
+                    do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                }
+            }
+            .task(id: health.hasRequested) {
+                if health.hasRequested {
+                    let values = await health.history()
+                    for value in values where !Task.isCancelled { store.saveActivity(value) }
+                }
+            }
             .onDisappear { health.stop(); store.cancelCloudBackup() }
             .onChange(of: health.observation) { _, observation in
                 if let observation { store.saveActivity(observation) }
@@ -43,15 +55,10 @@ struct AccountWorkspace: View {
 struct RootView: View {
     @EnvironmentObject private var store: AppStore
     var body: some View {
-        Group {
-            if store.snapshot.profile == nil {
-                ProfileEditor(onboarding: true)
-            } else {
-                TabView {
-                    TodayView().tabItem { Label("今日", systemImage: "calendar") }
-                    SettingsView().tabItem { Label("我的", systemImage: "person") }
-                }
-            }
+        TabView {
+            TodayView().tabItem { Label("今日", systemImage: "calendar") }
+            TrendsView().tabItem { Label("趋势", systemImage: "chart.bar") }
+            SettingsView().tabItem { Label("我的", systemImage: "person") }
         }
         .alert("本地数据提示", isPresented: Binding(get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })) {
             Button("知道了", role: .cancel) {}

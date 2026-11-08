@@ -8,7 +8,7 @@ final class AppStore: ObservableObject {
     @Published private(set) var storageUnavailable = false
     @Published private(set) var cloudEnabled = false
     @Published private(set) var cloudSyncing = false
-    @Published private(set) var cloudMessage = "尚未启用 NAS 备份"
+    @Published private(set) var cloudMessage = "等待同步"
     @Published private(set) var cloudLastSynced: Date?
     @Published private(set) var canUndoRestore = false
     private var cloudState = CloudState()
@@ -187,13 +187,12 @@ final class AppStore: ObservableObject {
     }
 
     func scheduleCloudBackup() {
-        guard cloudEnabled, snapshot.profile != nil, service.isValid else { return }
-        if cloudSyncing { return }
+        guard service.isValid else { return }
         cloudTask?.cancel()
         cloudTask = Task { @MainActor in
             do { try await Task.sleep(for: .seconds(2)); try Task.checkCancellation() }
             catch { return }
-            await backupToCloud(onlyIfChanged: true)
+            await backupToCloud()
         }
     }
 
@@ -207,50 +206,64 @@ final class AppStore: ObservableObject {
         return (copy, CloudClient.hash(try encoder.encode(copy)))
     }
 
-    func backupToCloud(onlyIfChanged: Bool = false) async {
+    func backupToCloud(onlyIfChanged: Bool = false, keepLocal: Bool = false) async {
         let configuration = service
-        guard !cloudSyncing, cloudEnabled, !storageUnavailable, snapshot.profile != nil, configuration.isValid else { return }
-        let client = CloudClient(configuration: configuration)
-        guard cloudState.identity == client.identity else { serviceConfigurationChanged(); return }
+        guard !cloudSyncing, !storageUnavailable, configuration.isValid else { return }
         cloudSyncing = true
         let savedGeneration = generation
+        var settledGeneration = savedGeneration
         defer {
             cloudSyncing = false
-            if generation != savedGeneration { scheduleCloudBackup() }
+            if generation != settledGeneration { scheduleCloudBackup() }
         }
         do {
-            let (copy, hash) = try backupSnapshot()
-            if onlyIfChanged && hash == cloudState.lastSnapshotHash { return }
-            cloudMessage = "正在检查 NAS 备份版本…"
+            let client = CloudClient(configuration: configuration)
             let remote = try await client.read()
-            if let revision = cloudState.revision {
-                guard revision == remote.revision else { throw CloudError.conflict }
-            } else {
-                guard remote.revision == 0 else { throw CloudError.conflict }
+            let baselineFile = folder.appendingPathComponent("sync-baseline.json")
+            let baseline = (try? JSONDecoder().decode(AppSnapshot.self, from: Data(contentsOf: baselineFile))) ?? AppSnapshot()
+            var merged = keepLocal ? snapshot : try SnapshotMerge.merge(base: baseline, local: snapshot,
+                                                                         remote: remote.snapshot ?? AppSnapshot())
+            let names = Set(merged.meals.compactMap(\.photoFilename))
+            for reference in remote.photos where names.contains(reference.filename) {
+                guard Self.safePhotoName(reference.filename) else { throw StorageError.invalidData }
+                let destination = folder.appendingPathComponent(reference.filename)
+                if !FileManager.default.fileExists(atPath: destination.path) {
+                    let data = try await client.download(digest: reference.sha256)
+                    try data.write(to: destination, options: [.atomic, .completeFileProtection])
+                }
             }
-            let names = Set(copy.meals.compactMap(\.photoFilename))
-            let existing = Set(remote.photos.map(\.sha256))
             var references: [CloudPhoto] = []
-            for (index, name) in names.sorted().enumerated() {
-                try Task.checkCancellation()
-                guard Self.safePhotoName(name) else { throw CloudError.message("本机照片路径异常，备份未提交。") }
+            let uploaded = Set(remote.photos.map(\.sha256))
+            for name in names.sorted() {
+                guard Self.safePhotoName(name) else { throw StorageError.invalidData }
                 let data = try Data(contentsOf: folder.appendingPathComponent(name))
-                let hash = CloudClient.hash(data)
-                cloudMessage = "正在备份照片 \(index + 1)/\(names.count)…"
-                if !existing.contains(hash) { try await client.upload(data, digest: hash) }
-                references.append(CloudPhoto(filename: name, sha256: hash))
+                let digest = CloudClient.hash(data)
+                if !uploaded.contains(digest) { try await client.upload(data, digest: digest) }
+                references.append(CloudPhoto(filename: name, sha256: digest))
             }
-            try Task.checkCancellation()
-            cloudMessage = "正在提交资料和记录…"
-            let receipt = try await client.write(CloudSubmission(expectedRevision: remote.revision, snapshot: copy, photos: references))
-            guard client.identity == service.workspaceID else { return }
-            cloudState.revision = receipt.revision
+            guard savedGeneration == generation, client.identity == service.workspaceID else { return }
+            // Persist downloaded records before uploading, so a process interruption preserves edits.
+            merged.aiConsent = snapshot.aiConsent
+            try commit(merged, schedule: false)
+            settledGeneration = generation
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            var upload = merged
+            upload.aiConsent = false
+            let remoteData = try remote.snapshot.map { try encoder.encode($0) }
+            let localData = try encoder.encode(upload)
+            if remoteData != localData {
+                _ = try await client.write(CloudSubmission(expectedRevision: remote.revision, snapshot: upload, photos: references))
+            }
+            try JSONEncoder().encode(upload).write(to: baselineFile, options: [.atomic, .completeFileProtection])
             cloudState.lastSynced = Date()
-            cloudState.lastSnapshotHash = hash
+            cloudState.enabled = true
+            cloudState.identity = client.identity
             try saveCloudState()
-            cloudMessage = generation == savedGeneration ? "NAS 备份成功 · 版本 \(receipt.revision)" : "本批已备份，正在等待备份后续修改"
-        } catch is CancellationError { cloudMessage = "备份已取消，本机资料仍保留" }
-        catch { cloudMessage = error.localizedDescription }
+            cloudMessage = generation == settledGeneration ? "已同步" : "等待同步"
+        } catch SnapshotMerge.Conflict.concurrentEdit {
+            cloudMessage = "同一记录在其他设备有修改，请在数据同步页选择版本"
+        } catch { cloudMessage = "等待同步 · " + error.localizedDescription }
     }
 
     func restoreFromCloud() async {
@@ -265,7 +278,7 @@ final class AppStore: ObservableObject {
         do {
             cloudMessage = "正在读取 NAS 记录…"
             let remote = try await client.read()
-            guard var copy = remote.snapshot, copy.schemaVersion == 1, copy.profile?.isValid == true,
+            guard var copy = remote.snapshot, copy.schemaVersion == 1, copy.profile?.isValid != false,
                   copy.meals.allSatisfy(\.isValid) else { throw CloudError.message("NAS 没有可恢复的有效备份，本机资料未改变。") }
             let names = Set(copy.meals.compactMap(\.photoFilename))
             guard names == Set(remote.photos.map(\.filename)), names.count == remote.photos.count,
@@ -310,6 +323,7 @@ final class AppStore: ObservableObject {
             }
             copy.aiConsent = snapshot.aiConsent
             try commit(copy, schedule: false)
+            try JSONEncoder().encode(copy).write(to: folder.appendingPathComponent("sync-baseline.json"), options: [.atomic, .completeFileProtection])
             cloudState.identity = client.identity
             cloudState.revision = remote.revision
             cloudState.lastSynced = Date()

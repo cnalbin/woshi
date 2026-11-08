@@ -30,10 +30,10 @@ final class AccountSession: ObservableObject {
     @Published private(set) var record = Record.load()
     @Published private(set) var requiresLogin = UserDefaults.standard.bool(forKey: "nasAccountUsed")
     var lastAddress: String {
-        UserDefaults.standard.string(forKey: "serviceURL") ?? "https://frp-cup.com:63314"
+        UserDefaults.standard.string(forKey: "serviceURL") ?? "https://www.u2483924.nyat.app:63314"
     }
 
-    func signIn(address: String, username: String, password: String) async throws {
+    func signIn(address: String, username: String, password: String, registering: Bool = false) async throws {
         struct Credentials: Encodable { let username: String; let password: String }
         struct SessionResponse: Decodable {
             let accountId: String
@@ -50,7 +50,7 @@ final class AccountSession: ObservableObject {
         if components.scheme == "https", components.port == 443 { components.port = nil }
         while components.path.hasSuffix("/") { components.path.removeLast() }
         guard let base = components.url else { throw AIError.message("NAS 地址无效。") }
-        var request = URLRequest(url: base.appendingPathComponent("v1/auth/login"))
+        var request = URLRequest(url: base.appendingPathComponent(registering ? "v1/auth/register" : "v1/auth/login"))
         request.httpMethod = "POST"
         request.timeoutInterval = 15
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

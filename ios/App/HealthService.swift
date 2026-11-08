@@ -60,6 +60,31 @@ final class HealthService: ObservableObject {
         store.enableBackgroundDelivery(for: type, frequency: .hourly) { _, _ in }
     }
 
+    func history() async -> [ActivityDay] {
+        guard hasRequested, available,
+              let type = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned),
+              let start = Calendar.current.date(byAdding: .day, value: -730, to: Date()) else { return [] }
+        let calendar = Calendar.current
+        let anchor = calendar.startOfDay(for: start)
+        return await withCheckedContinuation { continuation in
+            let query = HKStatisticsCollectionQuery(quantityType: type,
+                quantitySamplePredicate: HKQuery.predicateForSamples(withStart: anchor, end: Date()),
+                options: .cumulativeSum, anchorDate: anchor, intervalComponents: DateComponents(day: 1))
+            query.initialResultsHandler = { _, result, _ in
+                var values: [ActivityDay] = []
+                result?.enumerateStatistics(from: anchor, to: Date()) { statistics, _ in
+                    if let energy = statistics.sumQuantity()?.doubleValue(for: .kilocalorie()) {
+                        let day = ActivityDay.key(for: statistics.startDate, timeZone: calendar.timeZone)
+                        values.append(ActivityDay(id: "\(day)|\(calendar.timeZone.identifier)", day: day,
+                            timeZone: calendar.timeZone.identifier, activeKcal: energy, updatedAt: Date()))
+                    }
+                }
+                continuation.resume(returning: values)
+            }
+            store.execute(query)
+        }
+    }
+
     func refresh(for day: Date) async {
         selectedDay = day
         guard hasRequested, available,

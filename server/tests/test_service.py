@@ -196,3 +196,31 @@ def test_existing_backup_belongs_only_to_designated_account(fixture):
             headers = {"Authorization": f"Bearer {result['token']}"}
             assert client.get("/v1/backup", headers=headers).json()["revision"] == revision
             assert client.get(f"/v1/photos/{PHOTO_HASH}", headers=headers).status_code == (200 if legacy else 404)
+
+
+def test_registration_and_private_ai_settings(fixture):
+    seen = []
+    def provider(request):
+        seen.append(json.loads(request.content)["model"])
+        assert request.headers["Authorization"] == "Bearer personal-test-key"
+        return reply(AI_RESULT)
+    client, _ = fixture(provider, enable_legacy_token=False)
+    with client:
+        credentials = {"username": "newaccount", "password": "test-password-only"}
+        result = client.post("/v1/auth/register", json=credentials)
+        assert result.status_code == 200
+        headers = {"Authorization": "Bearer " + result.json()["token"]}
+        assert client.post("/v1/auth/register", json=credentials).status_code == 409
+        payload = {"baseURL": "https://api.deepseek.com", "apiKey": "personal-test-key",
+                   "textModel": "my-text-model", "visionModel": "my-vision-model"}
+        assert client.put("/v1/ai/settings", json=payload, headers=headers).status_code == 200
+        public = client.get("/v1/ai/settings", headers=headers)
+        assert "personal-test-key" not in public.text
+        assert public.json()["hasKey"]
+        assert client.post("/v1/ai/test", headers=headers).status_code == 200
+        assert seen == ["my-text-model"]
+        payload["baseURL"] = "https://127.0.0.1"
+        assert client.put("/v1/ai/settings", json=payload, headers=headers).status_code == 400
+        other = client.post("/v1/auth/register", json={**credentials, "username": "another"}).json()
+        other_headers = {"Authorization": "Bearer " + other["token"]}
+        assert not client.get("/v1/ai/settings", headers=other_headers).json()["hasKey"]

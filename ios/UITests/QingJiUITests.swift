@@ -7,11 +7,10 @@ final class QingJiUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
                                 "-serviceURL", "http://localhost:8787"]
         app.launch()
-        let service = app.buttons["service.open"]
-        XCTAssertTrue(service.waitForExistence(timeout: 10))
-        reveal(service, in: app)
-        service.tap()
         login("first-user", in: app)
+        let profile = app.buttons["profile.open"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 15))
+        profile.tap()
         let start = app.buttons["profile.save"]
         XCTAssertTrue(start.waitForExistence(timeout: 15))
         capture("01-个人资料")
@@ -73,28 +72,15 @@ final class QingJiUITests: XCTestCase {
         let backup = app.buttons["backup.open"]
         reveal(backup, in: app)
         backup.tap()
-        let enable = app.buttons["backup.enable"]
-        XCTAssertTrue(enable.waitForExistence(timeout: 8))
-        enable.tap()
-        let confirmEnable = app.alerts.buttons["启用备份"]
-        XCTAssertTrue(confirmEnable.waitForExistence(timeout: 8))
-        confirmEnable.tap()
-        let status = app.staticTexts["backup.status"]
-        let success = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "NAS 备份成功"), object: status)
-        XCTAssertEqual(XCTWaiter.wait(for: [success], timeout: 20), .completed, "Backup status: \(status.label)")
-        app.buttons["backup.restore"].tap()
-        let confirmRestore = app.alerts.buttons["恢复"]
-        XCTAssertTrue(confirmRestore.waitForExistence(timeout: 8))
-        confirmRestore.tap()
-        let restored = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", "已从 NAS 恢复 1 条"), object: status)
-        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 20), .completed, "Restore status: \(status.label)")
-        capture("07-NAS备份和恢复")
+        let status = app.staticTexts["sync.status"]
+        XCTAssertTrue(status.waitForExistence(timeout: 10))
+        let success = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "已同步"), object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [success], timeout: 30), .completed)
+        capture("07-自动同步")
         app.navigationBars.buttons.firstMatch.tap()
         signOut(in: app)
         login("second-user", in: app)
-        XCTAssertTrue(start.waitForExistence(timeout: 10), "A different account must open a new workspace")
-        reveal(start, in: app)
-        start.tap()
+        XCTAssertTrue(manual.waitForExistence(timeout: 10), "New accounts should enter the home screen")
         XCTAssertTrue(manual.waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["intake.total"].label, "0")
         app.tabBars.buttons["我的"].tap()
@@ -105,6 +91,9 @@ final class QingJiUITests: XCTestCase {
     }
 
     private func login(_ name: String, in app: XCUIApplication) {
+        let mode = app.buttons["service.mode"]
+        XCTAssertTrue(mode.waitForExistence(timeout: 8))
+        mode.tap()
         let address = app.textFields["service.address"]
         XCTAssertTrue(address.waitForExistence(timeout: 8))
         if address.value as? String != "http://localhost:8787" {

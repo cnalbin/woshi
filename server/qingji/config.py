@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     rate_limit_per_hour: int = Field(default=60, ge=1, le=1000)
     max_concurrent_requests: int = Field(default=3, ge=1, le=20)
     # Existing single-user backup namespace, which can be assigned to one account.
+    ai_allowed_hosts: str = "api.deepseek.com,api.openai.com"
     owner_id: str = Field(default="owner", pattern=r"^[a-zA-Z0-9_-]{1,40}$")
 
     def connection_url(self) -> URL:

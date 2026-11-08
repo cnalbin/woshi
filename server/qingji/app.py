@@ -13,11 +13,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy import text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 
 from .accounts import Accounts
+from .ai_settings import ProviderSettings
 from .config import Settings
-from .schemas import BackupWrite, Digest, LoginInput, MealInput, MealResult, MetabolismResult, ProfileInput
+from .schemas import AISettings, RegisterInput, BackupWrite, Digest, LoginInput, MealInput, MealResult, MetabolismResult, ProfileInput
 from .storage import Storage, StorageError, image_mime
 
 MEAL_PROMPT = """你是饮食记录助手。识别照片中的食物，估计整份食物的可食用熟重和热量，返回严格 JSON。
@@ -44,7 +45,7 @@ class Authentication:
         self.legacy_digest = hashlib.sha256(f"Bearer {legacy_token}".encode()).digest() if legacy_token else None
 
     async def __call__(self, scope, receive, send):
-        public = {("/healthz", "GET"), ("/v1/auth/login", "POST")}
+        public = {("/healthz", "GET"), ("/v1/auth/login", "POST"), ("/v1/auth/register", "POST")}
         if scope["type"] == "http" and (scope["path"], scope["method"]) not in public:
             headers = dict(scope.get("headers", []))
             authorization = headers.get(b"authorization", b"")
@@ -92,6 +93,7 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
         engine = settings.engine()
     storage = Storage(engine, settings.photo_directory, settings.owner_id)
     accounts = Accounts(engine, settings.owner_id)
+    providers = ProviderSettings(engine, settings)
 
     def account_storage(request: Request) -> Storage:
         return Storage(engine, settings.photo_directory, request.state.owner)
@@ -102,7 +104,7 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
         yield
         await asyncio.to_thread(engine.dispose)
 
-    app = FastAPI(title="轻记 NAS API", version="0.3.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="轻记 NAS API", version="0.4.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     legacy_token = settings.app_access_token.get_secret_value() if settings.enable_legacy_token else None
     app.add_middleware(Authentication, accounts=accounts, legacy_token=legacy_token)
     app.state.storage = storage
@@ -132,10 +134,12 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
             connection.execute(text("SELECT 1"))
         return {"status": "ok"}
 
+    @app.post("/v1/auth/register")
     @app.post("/v1/auth/login")
     async def login(request: Request):
         nonlocal login_window, login_count, login_active
-        value = await json_input(request, LoginInput, 4096)
+        registering = request.url.path.endswith("/register")
+        value = await json_input(request, RegisterInput if registering else LoginInput, 4096)
         if time.monotonic() - login_window >= 60:
             login_window, login_count = time.monotonic(), 0
         if login_count >= 30 or login_active >= 3:
@@ -143,6 +147,13 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
         login_count += 1
         login_active += 1
         try:
+            if registering:
+                try:
+                    await asyncio.to_thread(accounts.create, value.username.strip().lower(), value.password.get_secret_value())
+                except IntegrityError:
+                    raise StorageError(409, "USERNAME_TAKEN", "用户名已被使用。") from None
+                except ValueError:
+                    raise StorageError(400, "INVALID_ACCOUNT", "用户名需为3–64位小写字母、数字、点、横线或下划线，首位为字母或数字。") from None
             result = await asyncio.to_thread(accounts.login, value.username.strip().lower(), value.password.get_secret_value())
         finally:
             login_active -= 1
@@ -175,15 +186,33 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
         path, mime = account_storage(request).get_photo(digest)
         return FileResponse(path, media_type=mime, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
-    async def provider(kind, content):
-        model = settings.deepseek_vision_model if kind == "meal" else settings.deepseek_text_model
+    @app.get("/v1/ai/settings")
+    def ai_settings(request: Request):
+        return JSONResponse(providers.public(request.state.owner), headers={"Cache-Control": "no-store"})
+
+    @app.put("/v1/ai/settings")
+    async def save_ai_settings(request: Request):
+        value = await json_input(request, AISettings, 4096)
+        await asyncio.to_thread(providers.save, request.state.owner, value)
+        return providers.public(request.state.owner)
+
+    @app.post("/v1/ai/test")
+    async def test_ai(request: Request):
+        credentials = await asyncio.to_thread(providers.credentials, request.state.owner, "metabolism")
+        result = await asyncio.wait_for(provider("metabolism", '{"sex":"male","age":30,"heightCM":175,"weightKG":70}', credentials),
+                                        timeout=settings.request_timeout_seconds)
+        MetabolismResult.model_validate(result)
+        return {"message": "文字模型连接成功。图片能力请通过拍照分析验证。"}
+
+    async def provider(kind, content, credentials):
+        base_url, api_key, model = credentials
         async with httpx.AsyncClient(transport=ai_transport, timeout=settings.request_timeout_seconds) as client:
-            response = await client.post(settings.deepseek_base_url.rstrip("/") + "/chat/completions", headers={
-                "Authorization": "Bearer " + settings.deepseek_api_key.get_secret_value()}, json={
+            response = await client.post(base_url.rstrip("/") + "/chat/completions", headers={
+                "Authorization": "Bearer " + api_key}, json={
                 "model": model, "messages": [{"role": "system", "content": MEAL_PROMPT if kind == "meal" else METABOLISM_PROMPT},
                                               {"role": "user", "content": content}],
                 "response_format": {"type": "json_object"}, "stream": False, "max_tokens": 2500,
-                "thinking": {"type": "disabled"}})
+                **({"thinking": {"type": "disabled"}} if "api.deepseek.com" in base_url else {})})
             if response.status_code == 429:
                 raise StorageError(503, "PROVIDER_BUSY", "AI 服务繁忙，请稍后重试。")
             if not response.is_success:
@@ -212,8 +241,7 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
         else:
             value = await json_input(request, ProfileInput, 4096)
             content = value.model_dump_json()
-        if not settings.deepseek_api_key.get_secret_value() or settings.deepseek_api_key.get_secret_value().startswith("replace-"):
-            raise StorageError(503, "AI_NOT_CONFIGURED", "NAS 存储可用，但服务端尚未配置 DeepSeek Key。")
+        credentials = await asyncio.to_thread(providers.credentials, request.state.owner, kind)
         if time.monotonic() - app.state.quota_started >= 3600:
             app.state.quota_started, app.state.quota_count = time.monotonic(), 0
         if app.state.quota_count >= settings.rate_limit_per_hour:
@@ -228,7 +256,7 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
             try:
                 yield event("progress", {"stage": "received", "message": "照片已接收" if kind == "meal" else "个人资料已接收"})
                 yield event("progress", {"stage": "analyzing", "message": "AI 正在识别食物并估算份量与热量" if kind == "meal" else "AI 正在分析静息代谢"})
-                task = asyncio.create_task(asyncio.wait_for(provider(kind, content), timeout=settings.request_timeout_seconds))
+                task = asyncio.create_task(asyncio.wait_for(provider(kind, content, credentials), timeout=settings.request_timeout_seconds))
                 while not task.done():
                     done, _ = await asyncio.wait({task}, timeout=10)
                     if not done:

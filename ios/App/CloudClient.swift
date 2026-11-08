@@ -55,7 +55,7 @@ struct CloudClient {
         return data
     }
 
-    private func request(_ path: String, method: String, data: Data? = nil,
+    func request(_ path: String, method: String, data: Data? = nil,
                          contentType: String = "application/json", maximum: Int = 24_000_000) async throws -> Data {
         guard configuration.isValid, let base = URL(string: configuration.baseURL) else {
             throw CloudError.message("请先登录 NAS 账号。")

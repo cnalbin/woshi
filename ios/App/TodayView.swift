@@ -6,6 +6,7 @@ struct TodayView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var day = Date()
     @State private var manual = false
+    @State private var profileEditor = false
     @State private var photo = false
     @State private var metabolism = false
     @State private var editing: Meal?
@@ -21,6 +22,15 @@ struct TodayView: View {
                         intakeCard(profile)
                         MetabolismCard(profile: profile, assessment: store.snapshot.metabolism) { metabolism = true }
                     }
+                    if store.snapshot.profile == nil {
+                        Button("完善个人资料，查看代谢估算") { profileEditor = true }
+                            .accessibilityIdentifier("profile.open")
+                        Card {
+                            Text("已记录摄入")
+                            Text("\(Int(intake)) kcal").font(.largeTitle.bold()).accessibilityIdentifier("intake.total")
+                        }
+                    }
+                    Text(store.cloudMessage).font(.caption).foregroundStyle(.secondary)
                     activityCard
                     mealList
                 }.padding(.horizontal, 18).padding(.bottom, 16)
@@ -39,6 +49,7 @@ struct TodayView: View {
                     .accessibilityIdentifier("meal.manual")
                 }.padding(.horizontal, 18).padding(.vertical, 10).background(.bar)
             }
+            .sheet(isPresented: $profileEditor) { ProfileEditor(onboarding: false) }
             .refreshable { await health.refresh(for: day) }
             .task { await health.refresh(for: day) }
             .onChange(of: day) { _, value in Task { await health.refresh(for: value) } }

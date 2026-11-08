@@ -35,7 +35,7 @@ struct ProfileEditor: View {
                         Label(session.record == nil ? "登录 NAS 账号" : "管理 NAS 账号", systemImage: "person.crop.circle")
                     }.accessibilityIdentifier("service.open")
                     if session.record != nil {
-                        NavigationLink { BackupView() } label: { Label("从旧手机的 NAS 备份恢复", systemImage: "arrow.down.circle") }
+                        NavigationLink { SyncView() } label: { Label("数据同步", systemImage: "icloud") }
                     }
                 }
                 Section {
@@ -198,17 +198,22 @@ struct SettingsView: View {
                     }
                 }
                 Section("连接") {
+                    NavigationLink { ModelSettingsView() } label: { Label("AI 模型设置", systemImage: "sparkles") }
+                    Text(store.cloudMessage).font(.caption).foregroundStyle(.secondary)
                     NavigationLink { ServiceSettingsView(store: store) } label: {
                         Label(session.record.map { "NAS 账号 · \($0.username)" } ?? "登录 NAS 账号", systemImage: "person.crop.circle")
                     }
                         .accessibilityIdentifier("service.open")
-                    NavigationLink { BackupView() } label: { Label("NAS 备份与恢复", systemImage: "externaldrive") }
+                    NavigationLink { SyncView() } label: { Label("数据同步", systemImage: "icloud") }
                         .accessibilityIdentifier("backup.open")
                     Button { Task { await health.connect() } } label: {
                         HStack { Label("苹果健康", systemImage: "heart"); Spacer(); Text(health.hasRequested ? "检查连接" : "连接").foregroundStyle(.secondary) }
                     }
                     Text("读取每日活动能量。开启 NAS 备份后保存每日汇总，AI 分析不会收到运动数据。")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                if store.snapshot.profile == nil {
+                    Section { Button("完善个人资料") { editProfile = true } }
                 }
                 Section("隐私与数据") {
                     if store.snapshot.aiConsent {
@@ -244,6 +249,8 @@ struct ServiceSettingsView: View {
     @State private var password = ""
     @State private var error: String?
     @State private var working = false
+    @State private var registering = true
+    @State private var confirmPassword = ""
     @State private var confirmLogout = false
     @State private var confirmImport = false
 
@@ -271,12 +278,18 @@ struct ServiceSettingsView: View {
                         .accessibilityIdentifier("service.username")
                     SecureField("密码", text: $password).textContentType(.password)
                         .accessibilityIdentifier("service.password")
-                } header: { Text("登录你的轻记后端") } footer: {
-                    Text("账号由 NAS 管理员创建。登录后使用自己的记录、备份和 AI 分析。")
+                    if registering {
+                        SecureField("确认密码", text: $confirmPassword).textContentType(.newPassword)
+                            .accessibilityIdentifier("service.confirm")
+                    }
+                } header: { Text(registering ? "创建轻记账号" : "登录轻记账号") } footer: {
+                    Text("用户名支持字母、数字、点、横线及下划线。注册密码至少12个字符，记录随账号自动同步。")
                 }
                 Section {
-                    Button("登录") { login() }.disabled(working || address.isEmpty || username.isEmpty || password.isEmpty)
+                    Button(registering ? "注册并开始" : "登录") { login() }.disabled(working || address.isEmpty || username.isEmpty || password.isEmpty)
                         .accessibilityIdentifier("service.save")
+                    Button(registering ? "已有账号？登录" : "创建新账号") { registering.toggle() }
+                        .accessibilityIdentifier("service.mode")
                     if working { ProgressView("正在验证账号…") }
                 }
             }
@@ -299,11 +312,12 @@ struct ServiceSettingsView: View {
 
     private func login() {
         error = nil
+        if registering && password != confirmPassword { error = "两次密码不一致。"; return }
         working = true
         Task {
             defer { working = false }
             do {
-                try await session.signIn(address: address, username: username, password: password)
+                try await session.signIn(address: address, username: username, password: password, registering: registering)
                 password = ""
             } catch {
                 password = ""

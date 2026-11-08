@@ -70,7 +70,7 @@ class ActivityDay(Model):
 
 class Snapshot(Model):
     schemaVersion: Literal[1] = 1
-    profile: Profile
+    profile: Profile | None = None
     metabolism: Assessment | None = None
     meals: list[Meal] = Field(default_factory=list, max_length=10000)
     activityDays: list[ActivityDay] = Field(default_factory=list, max_length=20000)
@@ -128,3 +128,13 @@ class MealResult(Model):
         if self.isFood and not self.items:
             raise ValueError("Food result cannot be empty")
         return self
+
+class RegisterInput(LoginInput):
+    password: SecretStr = Field(min_length=12, max_length=128)
+
+
+class AISettings(Model):
+    baseURL: str = Field(default="https://api.deepseek.com", max_length=300)
+    textModel: str = Field(default="", max_length=120)
+    visionModel: str = Field(default="", max_length=120)
+    apiKey: SecretStr = Field(default=SecretStr(""), max_length=500)

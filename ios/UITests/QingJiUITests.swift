@@ -76,7 +76,14 @@ final class QingJiUITests: XCTestCase {
         reveal(consent, in: app)
         consent.tap()
         let result = app.staticTexts["UI 集成测试：已通过真实 SSE 接收代谢结果。"]
-        XCTAssertTrue(result.waitForExistence(timeout: 30), "iOS SSE decoding must work through the real private backend")
+        let completed = result.waitForExistence(timeout: 30)
+        if !completed {
+            capture("AI结果接收诊断")
+            let debug = XCTAttachment(string: app.debugDescription)
+            debug.lifetime = .keepAlways
+            self.add(debug)
+        }
+        XCTAssertTrue(completed, "iOS SSE decoding must work through the real private backend")
         capture("06-AI结果与综合代谢")
     }
 

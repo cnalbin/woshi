@@ -108,31 +108,19 @@ struct AIClient {
             guard http.value(forHTTPHeaderField: "Content-Type")?.contains("text/event-stream") == true else {
                 throw AIError.message("服务返回格式不正确，请检查后端地址。")
             }
-            var event = ""
-            var data = ""
+            var parser = AnalysisEventParser()
             for try await line in bytes.lines {
                 try Task.checkCancellation()
-                if line.isEmpty {
-                    if !data.isEmpty {
-                        let payload = Data(data.utf8)
-                        switch event {
-                        case "progress":
-                            let update = try JSONDecoder().decode(AnalysisProgress.self, from: payload)
-                            await progress(update)
-                        case "result": return try JSONDecoder().decode(Output.self, from: payload)
-                        case "error":
-                            let error = try JSONDecoder().decode(ServiceError.self, from: payload)
-                            throw AIError.message(error.message)
-                        default: break
-                        }
-                    }
-                    event = ""
-                    data = ""
-                } else if line.hasPrefix("event:") {
-                    event = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces)
-                } else if line.hasPrefix("data:") {
-                    data += String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
-                    guard data.utf8.count < 100_000 else { throw AIError.message("AI 结果过大，请重新识别。") }
+                guard let frame = try parser.consume(line) else { continue }
+                switch frame.name {
+                case "progress":
+                    let update = try JSONDecoder().decode(AnalysisProgress.self, from: frame.data)
+                    await progress(update)
+                case "result": return try JSONDecoder().decode(Output.self, from: frame.data)
+                case "error":
+                    let error = try JSONDecoder().decode(ServiceError.self, from: frame.data)
+                    throw AIError.message(error.message)
+                default: break
                 }
             }
             throw AIError.message("连接中断，结果尚未保存。请重试。")

@@ -2,6 +2,26 @@ import XCTest
 @testable import QingJiCore
 
 final class CoreTests: XCTestCase {
+    func testAnalysisEventsWithoutEmptySeparatorsAsDeliveredByFoundation() throws {
+        var parser = AnalysisEventParser()
+        let lines = ["event: progress", "data: {\"stage\":\"analyzing\",\"message\":\"正在分析\"}",
+            ": keepalive", "event: result", "data: {\"estimatedKcal\":1700,\"summary\":\"中文结果\",\"assumptions\":[]}"]
+        let frames = try lines.compactMap { try parser.consume($0) }
+        XCTAssertEqual(frames.map(\.name), ["progress", "result"])
+        let result = try JSONDecoder().decode(MetabolismResponse.self, from: frames[1].data)
+        XCTAssertEqual(result.estimatedKcal, 1700)
+        XCTAssertEqual(result.summary, "中文结果")
+    }
+    func testAnalysisEventsWithCRLFAndBlankLinesAndOversizedPayload() throws {
+        var parser = AnalysisEventParser()
+        XCTAssertNil(try parser.consume("event: error\r"))
+        let frame = try XCTUnwrap(parser.consume("data: {\"message\":\"失败\"}\r"))
+        XCTAssertEqual(frame.name, "error")
+        XCTAssertNil(try parser.consume(""))
+        XCTAssertNil(try parser.consume(": keepalive"))
+        XCTAssertNil(try parser.consume("event: result"))
+        XCTAssertThrowsError(try parser.consume("data: " + String(repeating: "x", count: 100001)))
+    }
     func testFormulaAndIndependentDietTarget() {
         var profile = Profile()
         XCTAssertEqual(profile.formulaKcal, 1648.75, accuracy: 0.001)

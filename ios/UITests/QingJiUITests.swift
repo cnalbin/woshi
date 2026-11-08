@@ -4,7 +4,8 @@ final class QingJiUITests: XCTestCase {
     func testOnboardingMealFractionAndPersistence() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
+                                "-serviceURL", "http://localhost:8787"]
         app.launch()
         let service = app.buttons["service.open"]
         XCTAssertTrue(service.waitForExistence(timeout: 10))

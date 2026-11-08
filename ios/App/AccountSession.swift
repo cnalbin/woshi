@@ -29,7 +29,9 @@ final class AccountSession: ObservableObject {
 
     @Published private(set) var record = Record.load()
     @Published private(set) var requiresLogin = UserDefaults.standard.bool(forKey: "nasAccountUsed")
-    var lastAddress: String { UserDefaults.standard.string(forKey: "serviceURL") ?? "" }
+    var lastAddress: String {
+        UserDefaults.standard.string(forKey: "serviceURL") ?? "https://frp-cup.com:63314"
+    }
 
     func signIn(address: String, username: String, password: String) async throws {
         struct Credentials: Encodable { let username: String; let password: String }

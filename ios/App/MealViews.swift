@@ -20,6 +20,7 @@ struct MealEditor: View {
     @State private var saving = false
     @State private var error: String?
     @State private var deleteConfirmation = false
+    @State private var previewImage: UIImage?
 
     init(existing: Meal? = nil, initialDate: Date = Date(), analysis: MealAnalysis? = nil,
          photoData: Data? = nil, onSaved: (() -> Void)? = nil) {
@@ -95,9 +96,16 @@ struct MealEditor: View {
                     Section { Button("删除这条记录", role: .destructive) { deleteConfirmation = true } }
                 }
             }
+            .scrollContentBackground(.hidden).background(Theme.background)
             .navigationTitle(existing == nil ? "确认这餐" : "编辑记录").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
             .onAppear { initialize() }
+            .task {
+                if let photoData { previewImage = UIImage(data: photoData) }
+                else if let existing, let url = store.photoURL(for: existing) {
+                    previewImage = await Task.detached(priority: .userInitiated) { UIImage(contentsOfFile: url.path) }.value
+                }
+            }
             .sheet(item: $editingFood) { food in
                 FoodEditor(food: food) { updated in
                     if let index = items.firstIndex(where: { $0.id == updated.id }) { items[index] = updated }
@@ -111,11 +119,6 @@ struct MealEditor: View {
                 }
             }
         }
-    }
-
-    private var previewImage: UIImage? {
-        if let photoData { return UIImage(data: photoData) }
-        return existing.flatMap { store.photo(for: $0) }
     }
 
     private func initialize() {
@@ -175,6 +178,7 @@ struct FoodEditor: View {
                     } footer: { Text("换算假设食物配方和热量密度相同；也可直接修改热量。") }
                 }
             }
+            .scrollContentBackground(.hidden).background(Theme.background)
             .navigationTitle("编辑食物").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
@@ -196,88 +200,99 @@ struct PhotoMealView: View {
     @State private var showLibrary = false
     @State private var showCamera = false
     @State private var imageData: Data?
+    @State private var preview: UIImage?
     @State private var note = ""
     @State private var loadingImage = false
     @State private var running = false
     @State private var task: Task<Void, Never>?
-    @State private var progress = AnalysisProgress(stage: "uploading", message: "正在上传本次照片")
+    @State private var progress = AnalysisProgress(stage: "uploading", message: "正在发送本次照片")
+    @State private var history: [AnalysisProgress] = []
     @State private var started = Date()
     @State private var analysis: MealAnalysis?
     @State private var error: String?
+    @State private var cancelled = false
     @State private var consent = false
     @State private var review = false
     @State private var saved = false
+    @State private var showModel = false
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    if let data = imageData, let image = UIImage(data: data) {
-                        Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: .infinity)
-                            .frame(maxHeight: 310).clipShape(RoundedRectangle(cornerRadius: 22))
-                    } else {
-                        VStack(spacing: 15) {
-                            Image(systemName: "camera.viewfinder").font(.system(size: 58)).foregroundStyle(Theme.green)
-                            Text("把这一餐拍下来").font(.title2.bold())
-                            Text("拍全食物，光线明亮；可以补充饭量、做法和实际吃下的比例。")
-                                .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
-                        }.frame(maxWidth: .infinity).padding(.vertical, 42)
-                            .padding(.horizontal, 18).background(Theme.card, in: RoundedRectangle(cornerRadius: 22))
-                    }
-                    HStack(spacing: 14) {
-                        Button { showCamera = true } label: { Label("拍摄照片", systemImage: "camera") }
-                            .buttonStyle(.borderedProminent).disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
-                        Button { showLibrary = true } label: { Label("选择照片", systemImage: "photo") }.buttonStyle(.bordered)
-                        if loadingImage { ProgressView() }
-                    }.disabled(running || loadingImage)
-                    Card {
-                        Text("补充说明（可选）").font(.headline)
-                        TextField("例如：半碗米饭，鸡肉去皮，汤没喝", text: $note, axis: .vertical)
-                            .lineLimit(2...4).disabled(running)
-                            .onChange(of: note) { _, value in if value.count > 500 { note = String(value.prefix(500)) } }
-                        Text("照片与补充说明会发送给已配置的 AI 服务。")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if running {
-                        AnalysisStatusView(progress: progress, startedAt: started) { task?.cancel() }
-                    } else {
-                        Button { begin() } label: { Label(analysis == nil ? "开始 AI 分析" : "重新分析", systemImage: "sparkles") }
-                            .buttonStyle(PrimaryButtonStyle()).disabled(imageData == nil || loadingImage)
-                    }
-                    if let error {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        photoPreview
+                        HStack(spacing: 12) {
+                            Button { showCamera = true } label: { Label("拍摄照片", systemImage: "camera").frame(maxWidth: .infinity) }
+                                .buttonStyle(.borderedProminent).disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+                            Button { showLibrary = true } label: { Label("从相册选择", systemImage: "photo").frame(maxWidth: .infinity) }
+                                .buttonStyle(.bordered)
+                        }.disabled(running || loadingImage)
+                        if loadingImage { ProgressView("正在准备照片…").font(.caption) }
                         Card {
-                            Label("本次分析未完成", systemImage: "exclamationmark.circle").font(.headline)
-                            Text(error).font(.subheadline).foregroundStyle(.secondary)
-                            Button("改为手动记录") { analysis = nil; review = true }
+                            Text("补充一点信息，估算更贴近这一餐").font(.subheadline.weight(.semibold))
+                            TextField("例如：半碗米饭，鸡肉去皮，汤没喝", text: $note, axis: .vertical)
+                                .font(.subheadline).lineLimit(2...4).disabled(running)
+                                .accessibilityIdentifier("photo.note")
+                                .onChange(of: note) { _, value in if value.count > 500 { note = String(value.prefix(500)) } }
+                            Text("可填写份量、做法和实际吃下的比例").font(.caption2).foregroundStyle(.secondary)
                         }
-                    }
-                    if let analysis, !running {
-                        Card {
-                            Label("分析完成 · 等待你确认", systemImage: "checkmark.circle.fill").font(.headline).foregroundStyle(Theme.green)
-                            Text(analysis.summary).font(.subheadline)
-                            Text("识别到 \(analysis.items.count) 项食物，约 \(Int(analysis.items.reduce(0) { $0 + $1.estimatedKcal }.rounded())) kcal")
-                                .font(.subheadline.weight(.semibold))
-                            Button("核对食物与份量") { review = true }.buttonStyle(PrimaryButtonStyle())
+                        if running {
+                            AnalysisStatusView(progress: progress, startedAt: started, history: history) { task?.cancel() }
+                                .id("photo.status")
+                        } else if analysis == nil {
+                            Button { begin() } label: { Label(cancelled || error != nil ? "重新分析" : "开始 AI 分析", systemImage: "sparkles") }
+                                .buttonStyle(PrimaryButtonStyle()).disabled(imageData == nil || loadingImage)
+                                .accessibilityIdentifier("photo.start")
                         }
+                        if cancelled && !running {
+                            Card {
+                                Label("已取消，照片与说明已保留", systemImage: "pause.circle").font(.subheadline.weight(.medium))
+                                    .accessibilityIdentifier("photo.cancelled")
+                                Button("改为手动记录") { analysis = nil; review = true }.font(.subheadline)
+                            }
+                        }
+                        if let error, !running {
+                            Card {
+                                Label("这次分析未完成", systemImage: "exclamationmark.circle").font(.headline).foregroundStyle(Theme.orange)
+                                Text(error).font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
+                                HStack {
+                                    Button("模型设置") { showModel = true }
+                                    Spacer()
+                                    Button("改为手动记录") { analysis = nil; review = true }
+                                }.font(.subheadline)
+                            }
+                        }
+                        if let analysis, !running { resultCard(analysis).id("photo.result") }
+                    }.padding(18)
+                }.background(Theme.background)
+                    .onChange(of: running) { _, active in
+                        if active { withAnimation { proxy.scrollTo("photo.status", anchor: .bottom) } }
                     }
-                }.padding(18)
-            }.background(Theme.background)
-                .navigationTitle("拍照记餐").navigationBarTitleDisplayMode(.inline)
+                    .onChange(of: analysis != nil) { _, ready in
+                        if ready { withAnimation { proxy.scrollTo("photo.result", anchor: .bottom) } }
+                    }
+            }.navigationTitle("拍照记餐").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
                 .photosPicker(isPresented: $showLibrary, selection: $selection, matching: .images)
                 .task(id: selection) {
                     guard let selection else { return }
-                    loadingImage = true
-                    defer { loadingImage = false }
                     do {
                         guard let data = try await selection.loadTransferable(type: Data.self), let image = UIImage(data: data) else {
                             throw AIError.message("无法读取这张照片，请换一张。")
                         }
                         try Task.checkCancellation()
-                        setImage(image)
+                        await setImage(image)
                     } catch is CancellationError {} catch { self.error = error.localizedDescription }
                 }
-                .fullScreenCover(isPresented: $showCamera) { CameraPicker { image in setImage(image) } }
+                .task {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("-uiTestPhoto"), let image = UIImage(named: "BrandIcon") {
+                        await setImage(image)
+                    }
+                    #endif
+                }
+                .fullScreenCover(isPresented: $showCamera) { CameraPicker { image in Task { await setImage(image) } } }
                 .sheet(isPresented: $consent) {
                     AIConsentView {
                         do { try store.setAIConsent(true); run() } catch { self.error = error.localizedDescription }
@@ -286,45 +301,119 @@ struct PhotoMealView: View {
                 .sheet(isPresented: $review, onDismiss: { if saved { dismiss() } }) {
                     MealEditor(initialDate: initialDate, analysis: analysis, photoData: imageData) { saved = true }
                 }
+                .sheet(isPresented: $showModel) {
+                    NavigationStack {
+                        ModelSettingsView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showModel = false } } }
+                    }
+                }
                 .onDisappear { task?.cancel() }
         }
     }
-
-    private func setImage(_ image: UIImage) {
-        let size = image.size
-        guard size.width > 0, size.height > 0 else { error = "图片尺寸无效。"; return }
-        let scale = min(1, 1600 / max(size.width, size.height))
-        let target = CGSize(width: size.width * scale, height: size.height * scale)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1; format.opaque = true; format.preferredRange = .standard
-        let normalized = UIGraphicsImageRenderer(size: target, format: format).image { _ in
-            UIColor.white.setFill(); UIRectFill(CGRect(origin: .zero, size: target))
-            image.draw(in: CGRect(origin: .zero, size: target))
+    @ViewBuilder private var photoPreview: some View {
+        if let preview {
+            Image(uiImage: preview).resizable().scaledToFit().frame(maxWidth: .infinity).frame(maxHeight: 230)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .overlay(alignment: .topTrailing) {
+                    Label("照片已就绪", systemImage: "checkmark.circle.fill").font(.caption.weight(.medium))
+                        .padding(8).background(.ultraThinMaterial, in: Capsule()).padding(10)
+                }
+        } else {
+            Card {
+                VStack(spacing: 14) {
+                    Image(systemName: "camera.viewfinder").font(.system(size: 44, weight: .light)).foregroundStyle(Theme.green)
+                    Text("把这一餐拍下来").font(.title3.bold())
+                    Text("拍全食物、保持光线明亮\n份量不确定，稍后也能修改")
+                        .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                }.frame(maxWidth: .infinity).padding(.vertical, 24)
+            }
         }
-        guard let jpeg = normalized.jpegData(compressionQuality: 0.75), jpeg.count <= 4_000_000 else {
-            error = "照片压缩后仍过大，请选择尺寸更小的图片。"; return
-        }
-        imageData = jpeg; analysis = nil; error = nil
     }
-
+    private func resultCard(_ result: MealAnalysis) -> some View {
+        Card {
+            Label("识别完成，等你确认", systemImage: "checkmark.circle.fill")
+                .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.green).accessibilityIdentifier("photo.result")
+            HStack(alignment: .firstTextBaseline) {
+                Text("\(Int(result.items.reduce(0) { $0 + $1.estimatedKcal }.rounded()))")
+                    .font(.system(size: 38, weight: .bold, design: .rounded))
+                Text("kcal").font(.subheadline).foregroundStyle(.secondary)
+                Spacer()
+                Text("\(result.items.count) 项食物").font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(Array(result.items.prefix(5).enumerated()), id: \.offset) { _, item in
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(item.name).font(.subheadline.weight(.medium))
+                        Text("约 \(Int(item.estimatedGrams.rounded())) 克").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text("\(Int(item.estimatedKcal.rounded())) kcal").font(.subheadline).monospacedDigit()
+                }
+            }
+            Text(result.summary).font(.subheadline).foregroundStyle(.secondary)
+            DisclosureGroup("查看估算依据与待确认事项") {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(result.assumptions.enumerated()), id: \.offset) { _, value in
+                        Label(value, systemImage: "info.circle").font(.caption)
+                    }
+                    ForEach(Array(result.questions.enumerated()), id: \.offset) { _, value in
+                        Label(value, systemImage: "questionmark.circle").font(.caption)
+                    }
+                }.foregroundStyle(.secondary).padding(.top, 6)
+            }.font(.caption)
+            Button("核对食物与份量") { review = true }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("photo.review")
+            HStack {
+                Text("份量与用油会影响估算，确认后才保存。").font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Button("重新分析") { begin() }.font(.caption).accessibilityIdentifier("photo.start")
+            }
+        }
+    }
+    private func setImage(_ image: UIImage) async {
+        loadingImage = true
+        defer { loadingImage = false }
+        do {
+            let jpeg = try await Task.detached(priority: .userInitiated) {
+                let size = image.size
+                guard size.width > 0, size.height > 0 else { throw AIError.message("图片尺寸无效。") }
+                let scale = min(1, 1600 / max(size.width, size.height))
+                let target = CGSize(width: size.width * scale, height: size.height * scale)
+                let format = UIGraphicsImageRendererFormat()
+                format.scale = 1; format.opaque = true; format.preferredRange = .standard
+                let normalized = UIGraphicsImageRenderer(size: target, format: format).image { _ in
+                    UIColor.white.setFill(); UIRectFill(CGRect(origin: .zero, size: target))
+                    image.draw(in: CGRect(origin: .zero, size: target))
+                }
+                guard let jpeg = normalized.jpegData(compressionQuality: 0.75), jpeg.count <= 4_000_000 else {
+                    throw AIError.message("照片压缩后仍过大，请选择尺寸更小的图片。")
+                }
+                return jpeg
+            }.value
+            try Task.checkCancellation()
+            imageData = jpeg; preview = UIImage(data: jpeg); analysis = nil; error = nil; cancelled = false
+        } catch is CancellationError {} catch { self.error = error.localizedDescription }
+    }
     private func begin() {
         guard store.service.isValid else { error = "请先在“我的 → NAS 账号”登录。"; return }
         if !store.snapshot.aiConsent { consent = true } else { run() }
     }
     private func run() {
         guard !running, let imageData else { return }
-        running = true; error = nil; analysis = nil; started = Date()
-        progress = .init(stage: "uploading", message: "正在上传本次照片")
+        running = true; error = nil; cancelled = false; analysis = nil; started = Date()
+        progress = .init(stage: "uploading", message: "正在发送本次照片与补充说明")
+        history = [progress]
         task = Task { @MainActor in
             defer { running = false }
             do {
-                let response = try await AIClient(configuration: store.service).meal(image: imageData, note: note) { progress = $0 }
+                let response = try await AIClient(configuration: store.service).meal(image: imageData, note: note) { update in
+                    progress = update
+                    if history.last?.stage != update.stage { history.append(update) }
+                }
                 try Task.checkCancellation()
                 guard !response.items.isEmpty, response.items.count <= 20, response.items.map(\.foodItem).allSatisfy(\.isValid) else {
                     throw AIError.message("识别结果不完整，请重试或手动记录。")
                 }
                 analysis = response
-            } catch is CancellationError { error = "分析已取消，照片草稿仍保留。" }
+            } catch is CancellationError { cancelled = true }
             catch { self.error = error.localizedDescription }
         }
     }

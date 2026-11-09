@@ -20,7 +20,8 @@ struct SyncView: View {
                     Text("本机副本会保留。选择版本将决定此次同步以哪一份完整资料为准。")
                 }
             }
-        }.disabled(store.cloudSyncing).navigationTitle("数据同步")
+        }.scrollContentBackground(.hidden).background(Theme.background)
+            .disabled(store.cloudSyncing).navigationTitle("数据同步").navigationBarTitleDisplayMode(.inline)
             .alert("确认使用所选版本？", isPresented: Binding(get: { choice != nil }, set: { if !$0 { choice = nil } })) {
                 Button("确认") {
                     let local = choice == true

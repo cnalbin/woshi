@@ -98,6 +98,9 @@ struct MetabolismDetailView: View {
     @State private var task: Task<Void, Never>?
     @State private var error: String?
     @State private var consent = false
+    @State private var history: [AnalysisProgress] = []
+    @State private var cancelled = false
+    @State private var showModel = false
 
     var body: some View {
         NavigationStack {
@@ -106,11 +109,17 @@ struct MetabolismDetailView: View {
                     if let profile = store.snapshot.profile {
                         MetabolismCard(profile: profile, assessment: store.snapshot.metabolism) {}
                         if running {
-                            AnalysisStatusView(progress: progress, startedAt: started) { cancel() }
+                            AnalysisStatusView(progress: progress, startedAt: started, history: history) { cancel() }
                         } else {
                             Button { begin() } label: { Label("AI 分析静息代谢", systemImage: "sparkles") }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("metabolism.start")
                         }
-                        if let error { Text(error).foregroundStyle(.red).font(.subheadline) }
+                        if cancelled { Label("分析已取消，个人资料已保留。", systemImage: "pause.circle").font(.subheadline).foregroundStyle(.secondary) }
+                        if let error {
+                            Card {
+                                Text(error).foregroundStyle(.secondary).font(.subheadline)
+                                Button("检查 AI 模型设置") { showModel = true }.font(.subheadline)
+                            }
+                        }
                         if let result = store.snapshot.metabolism {
                             Card {
                                 Text(result.matches(profile) ? "AI 分析依据" : "上次分析（资料已变化，请重新分析）").font(.headline)
@@ -122,7 +131,7 @@ struct MetabolismDetailView: View {
                             }
                         }
                         Card {
-                            Text("公式与综合规则").font(.headline)
+                          DisclosureGroup("公式与综合规则") {
                             Text("Mifflin–St Jeor：\n10 × 体重(kg) + 6.25 × 身高(cm) − 5 × 年龄 + 性别系数\n男性 +5，女性 −161。")
                                 .font(.subheadline)
                             Text("综合值采用公式 80% + AI 20%。这是未经临床验证的产品参考规则，不代表更准确的实测结果。AI 可能同样采用已有公式，不是独立测量。")
@@ -130,6 +139,7 @@ struct MetabolismDetailView: View {
                             Text("AI 未完成、资料已变化，或 AI 与公式差异超过 20% 时，综合值暂用公式。代谢估算不等于每日摄入目标，也不包含运动。")
                                 .font(.caption).foregroundStyle(.secondary)
                             Link("查看公式研究来源", destination: URL(string: "https://pubmed.ncbi.nlm.nih.gov/2305711/")!)
+                          }.font(.subheadline)
                         }
                     }
                 }.padding(18)
@@ -142,6 +152,11 @@ struct MetabolismDetailView: View {
                         catch { self.error = error.localizedDescription }
                     }
                 }
+                .sheet(isPresented: $showModel) {
+                    NavigationStack { ModelSettingsView().toolbar {
+                        ToolbarItem(placement: .confirmationAction) { Button("完成") { showModel = false } }
+                    } }
+                }
         }
     }
     private func begin() {
@@ -150,15 +165,19 @@ struct MetabolismDetailView: View {
     }
     private func run() {
         guard !running, let profile = store.snapshot.profile else { return }
-        running = true; error = nil; started = Date()
+        running = true; error = nil; cancelled = false; started = Date()
         progress = .init(stage: "uploading", message: "正在发送个人资料")
+        history = [progress]
         task = Task { @MainActor in
             defer { running = false }
             do {
-                let response = try await AIClient(configuration: store.service).metabolism(profile: profile) { progress = $0 }
+                let response = try await AIClient(configuration: store.service).metabolism(profile: profile) { update in
+                    progress = update
+                    if history.last?.stage != update.stage { history.append(update) }
+                }
                 try Task.checkCancellation()
                 try store.saveAssessment(response, for: profile)
-            } catch is CancellationError {} catch { self.error = error.localizedDescription }
+            } catch is CancellationError { cancelled = true } catch { self.error = error.localizedDescription }
         }
     }
     private func cancel() { task?.cancel() }
@@ -171,76 +190,109 @@ struct SettingsView: View {
     @State private var editProfile = false
     @State private var metabolism = false
     @State private var showConsent = false
+
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    HStack(spacing: 16) {
-                        Image("BrandIcon").resizable().frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 17))
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("轻记").font(.title2.bold())
-                            Text("记下每一餐，看见每一天").font(.caption).foregroundStyle(.secondary)
-                            Text(AppBuild.label).font(.caption).foregroundStyle(.secondary)
-                                .accessibilityIdentifier("app.build")
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    Card {
+                        HStack(spacing: 13) {
+                            Image("BrandIcon").resizable().frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 15))
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(session.record?.username ?? "轻记").font(.title3.bold())
+                                Text("记下每一餐，看见每一天").font(.caption).foregroundStyle(.secondary)
+                                Text(AppBuild.label).font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("app.build")
+                            }
+                            Spacer()
                         }
-                    }.padding(.vertical, 6)
-                }
-                if let profile = store.snapshot.profile {
-                    Section("个人信息") {
-                        LabeledContent("性别", value: profile.sex.label)
-                        LabeledContent("年龄", value: "\(profile.age) 岁")
-                        LabeledContent("身高", value: "\(profile.heightCM.formatted()) cm")
-                        LabeledContent("体重", value: "\(profile.weightKG.formatted()) kg")
-                        LabeledContent("每日摄入目标", value: "\(Int(profile.dailyTarget)) kcal")
-                        Button("编辑资料") { editProfile = true }
                     }
-                    Section {
-                        Button { metabolism = true } label: { Label("查看三种代谢结果与 AI 分析", systemImage: "sparkles") }
-                            .accessibilityIdentifier("metabolism.open")
+                    Card {
+                        HStack {
+                            Text("个人资料").font(.headline)
+                            Spacer()
+                            Button(store.snapshot.profile == nil ? "完善资料" : "编辑") { editProfile = true }.font(.caption.weight(.semibold))
+                        }
+                        if let profile = store.snapshot.profile {
+                            HStack {
+                                profileMetric("性别", profile.sex.label)
+                                profileMetric("年龄", "\(profile.age) 岁")
+                                profileMetric("身高", "\(Int(profile.heightCM)) cm")
+                                profileMetric("体重", "\(profile.weightKG.formatted(.number.precision(.fractionLength(0...1)))) kg")
+                            }
+                            Divider()
+                            HStack {
+                                Label("每日摄入目标", systemImage: "scope").font(.subheadline)
+                                Spacer()
+                                Text("\(Int(profile.dailyTarget)) kcal").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.green)
+                            }
+                        } else {
+                            Text("填写基本信息，查看公式、AI 与综合代谢估算。").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    if let profile = store.snapshot.profile {
+                        MetabolismCard(profile: profile, assessment: store.snapshot.metabolism) { metabolism = true }
+                        Button { metabolism = true } label: {
+                            Label("查看代谢分析与估算依据", systemImage: "sparkles").font(.subheadline.weight(.medium))
+                        }.accessibilityIdentifier("metabolism.open")
+                    }
+                    Card {
+                        Text("连接与同步").font(.headline)
+                        NavigationLink { ModelSettingsView() } label: {
+                            settingsRow("AI 模型设置", symbol: "sparkles", detail: "服务、模型与密钥")
+                        }.accessibilityIdentifier("model.open")
+                        Divider()
+                        NavigationLink { ServiceSettingsView(store: store) } label: {
+                            settingsRow("NAS 账号", symbol: "person.crop.circle", detail: session.record?.username ?? "登录")
+                        }.accessibilityIdentifier("service.open")
+                        Divider()
+                        NavigationLink { SyncView() } label: {
+                            settingsRow("数据同步", symbol: "icloud", detail: store.cloudMessage == "已同步" ? "已同步" : "查看状态")
+                        }.accessibilityIdentifier("backup.open")
+                        Divider()
+                        Button { Task { await health.connect() } } label: {
+                            settingsRow("苹果健康", symbol: "heart", detail: health.hasRequested ? "检查权限" : "连接")
+                        }
+                    }.buttonStyle(.plain)
+                    Card {
+                        Text("隐私与偏好").font(.headline)
+                        if store.snapshot.aiConsent {
+                            Toggle("允许主动发起 AI 分析", isOn: Binding(get: { store.snapshot.aiConsent }, set: { value in
+                                do { try store.setAIConsent(value) } catch { store.errorMessage = error.localizedDescription }
+                            })).font(.subheadline)
+                        } else {
+                            Button { showConsent = true } label: { settingsRow("启用 AI 分析", symbol: "sparkles", detail: "了解并授权") }
+                        }
+                        Divider()
+                        NavigationLink { PrivacyView() } label: { settingsRow("隐私与使用说明", symbol: "hand.raised", detail: "") }
+                    }.buttonStyle(.plain)
+                    Text("记录支持离线保存，联网后随账号同步。\n热量与代谢均为估算值，仅供记录参考。")
+                        .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.vertical, 4)
+                }.padding(18)
+            }.background(Theme.background).navigationTitle("我的").navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(Theme.background, for: .navigationBar)
+                .sheet(isPresented: $editProfile) { ProfileEditor(onboarding: false) }
+                .sheet(isPresented: $metabolism) { MetabolismDetailView() }
+                .sheet(isPresented: $showConsent) {
+                    AIConsentView {
+                        do { try store.setAIConsent(true) } catch { store.errorMessage = error.localizedDescription }
                     }
                 }
-                Section("连接") {
-                    NavigationLink { ModelSettingsView() } label: { Label("AI 模型设置", systemImage: "sparkles") }
-                        .accessibilityIdentifier("model.open")
-                    Text(store.cloudMessage).font(.caption).foregroundStyle(.secondary)
-                    NavigationLink { ServiceSettingsView(store: store) } label: {
-                        Label(session.record.map { "NAS 账号 · \($0.username)" } ?? "登录 NAS 账号", systemImage: "person.crop.circle")
-                    }
-                        .accessibilityIdentifier("service.open")
-                    NavigationLink { SyncView() } label: { Label("数据同步", systemImage: "icloud") }
-                        .accessibilityIdentifier("backup.open")
-                    Button { Task { await health.connect() } } label: {
-                        HStack { Label("苹果健康", systemImage: "heart"); Spacer(); Text(health.hasRequested ? "检查连接" : "连接").foregroundStyle(.secondary) }
-                    }
-                    Text("读取每日活动能量，每日汇总随当前账号自动同步。AI 分析不会收到运动数据。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                if store.snapshot.profile == nil {
-                    Section { Button("完善个人资料") { editProfile = true } }
-                }
-                Section("隐私与数据") {
-                    if store.snapshot.aiConsent {
-                        Toggle("允许主动发起 AI 分析", isOn: Binding(get: { store.snapshot.aiConsent }, set: { value in
-                            do { try store.setAIConsent(value) } catch { store.errorMessage = error.localizedDescription }
-                        }))
-                    } else {
-                        Button("了解并启用 AI 分析") { showConsent = true }
-                    }
-                    NavigationLink("隐私与使用说明") { PrivacyView() }
-                    Text("本机支持离线记录，联网后自动同步。换机登录同一服务器的相同账号，即可同步已有记录。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                Section { Text("轻记 · \(AppBuild.label) · 热量与代谢为估算值").font(.caption).foregroundStyle(.secondary) }
-            }
-            .navigationTitle("我的")
-            .sheet(isPresented: $editProfile) { ProfileEditor(onboarding: false) }
-            .sheet(isPresented: $metabolism) { MetabolismDetailView() }
-            .sheet(isPresented: $showConsent) {
-                AIConsentView {
-                    do { try store.setAIConsent(true) } catch { store.errorMessage = error.localizedDescription }
-                }
-            }
         }
+    }
+    private func profileMetric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.caption2).foregroundStyle(.secondary)
+            Text(value).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+    private func settingsRow(_ title: String, symbol: String, detail: String) -> some View {
+        HStack(spacing: 11) {
+            Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(Theme.green).frame(width: 25)
+            Text(title).font(.subheadline).foregroundStyle(.primary)
+            Spacer(minLength: 3)
+            Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+        }.frame(minHeight: 32).contentShape(Rectangle())
     }
 }
 

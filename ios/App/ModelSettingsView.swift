@@ -31,7 +31,8 @@ struct ModelSettingsView: View {
             } footer: {
                 Text("照片识别需要支持图片的模型。Key 加密保存在服务器，仅用于当前账号。测试连接会先保存配置并调用文字模型，可能产生少量费用。")
             }
-        }.navigationTitle("AI 模型设置")
+        }.scrollContentBackground(.hidden).background(Theme.background)
+            .navigationTitle("AI 模型设置").navigationBarTitleDisplayMode(.inline)
             .task {
                 do {
                     let data = try await CloudClient(configuration: store.service).request("v1/ai/settings", method: "GET")

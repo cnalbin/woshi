@@ -127,7 +127,7 @@ struct Meal: Identifiable, Codable, Equatable {
     var isValid: Bool { !items.isEmpty && items.count <= 30 && items.allSatisfy(\.isValid) }
 }
 
-struct AppSnapshot: Codable {
+struct AppSnapshot: Codable, Equatable {
     var schemaVersion: Int = 1
     var profile: Profile?
     var metabolism: MetabolismAssessment?
@@ -149,12 +149,10 @@ struct ActivityDay: Codable, Equatable, Identifiable {
     var updatedAt: Date
 
     static func key(for date: Date, timeZone: TimeZone = .current) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 }
 

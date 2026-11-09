@@ -2,25 +2,30 @@ import SwiftUI
 
 enum Theme {
     static let green = Color(red: 0.035, green: 0.34, blue: 0.19)
-    static let background = Color(uiColor: .systemGroupedBackground)
+    static let background = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .systemGroupedBackground : UIColor(red: 0.985, green: 0.976, blue: 0.958, alpha: 1)
+    })
     static let card = Color(uiColor: .secondarySystemGroupedBackground)
-    static let softGreen = Color.green.opacity(0.09)
+    static let softGreen = green.opacity(0.08)
+    static let orange = Color(red: 0.94, green: 0.55, blue: 0.23)
 }
 
 struct Card<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) { content }
+        VStack(alignment: .leading, spacing: 12) { content }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(18)
-            .background(Theme.card, in: RoundedRectangle(cornerRadius: 22))
+            .padding(16)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.primary.opacity(0.035), lineWidth: 1))
+            .shadow(color: .black.opacity(0.025), radius: 8, y: 3)
     }
 }
 
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.headline).frame(maxWidth: .infinity).padding(.vertical, 15)
-            .background(Theme.green.opacity(configuration.isPressed ? 0.7 : 1), in: RoundedRectangle(cornerRadius: 16))
+        configuration.label.font(.system(size: 16, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 14)
+            .background(Theme.green.opacity(configuration.isPressed ? 0.7 : 1), in: RoundedRectangle(cornerRadius: 14))
             .foregroundStyle(.white)
     }
 }
@@ -28,33 +33,57 @@ struct PrimaryButtonStyle: ButtonStyle {
 struct AnalysisStatusView: View {
     let progress: AnalysisProgress
     let startedAt: Date
+    var history: [AnalysisProgress] = []
     let cancel: () -> Void
     var body: some View {
         Card {
-            HStack(spacing: 14) {
-                ProgressView().tint(Theme.green).scaleEffect(1.2)
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles").font(.title2).foregroundStyle(Theme.green)
+                    .frame(width: 46, height: 46).background(Theme.softGreen, in: RoundedRectangle(cornerRadius: 14))
+                    .symbolEffect(.pulse, options: .repeating)
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(progress.message).font(.headline)
+                    Text("AI 正在分析").font(.headline)
                     TimelineView(.periodic(from: startedAt, by: 1)) { context in
-                        Text("已等待 \(max(0, Int(context.date.timeIntervalSince(startedAt)))) 秒 · 通常需要一些时间")
+                        Text("已用时 \(max(0, Int(context.date.timeIntervalSince(startedAt)))) 秒")
                             .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
                 }
-            }
-            HStack {
-                Label("资料已接收", systemImage: progress.stage == "uploading" ? "circle" : "checkmark.circle.fill")
                 Spacer()
-                Label("AI 分析", systemImage: progress.stage == "validating" ? "checkmark.circle.fill" : "sparkles")
-                Spacer()
-                Label("结果校验", systemImage: progress.stage == "validating" ? "checkmark.circle.fill" : "circle")
+                ProgressView().tint(Theme.green)
             }
-            .font(.caption2).foregroundStyle(Theme.green)
-            Text("等待时不会自动保存。完成后展示估算依据，方便你核对。")
+            VStack(alignment: .leading, spacing: 12) {
+                stage("发送资料", index: 0)
+                stage("识别与估算", index: 1)
+                stage("整理结果", index: 2)
+            }
+            Text(progress.message).font(.subheadline).foregroundStyle(Theme.green)
+                .accessibilityIdentifier("analysis.progress")
+            Text("显示服务器返回的处理阶段。完成后可查看估算依据；照片结果经你确认后才保存。")
                 .font(.caption).foregroundStyle(.secondary)
-            Button("取消分析", action: cancel).font(.subheadline)
+            if !history.isEmpty {
+                DisclosureGroup("本次处理记录") {
+                    ForEach(Array(history.enumerated()), id: \.offset) { _, item in
+                        Label(item.message, systemImage: "checkmark.circle")
+                            .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
+                    }
+                }.font(.caption)
+            }
+            Button("取消分析", action: cancel).font(.subheadline.weight(.medium))
+                .accessibilityIdentifier("analysis.cancel")
                 .accessibilityHint("取消网络请求，保留当前草稿")
         }
         .accessibilityElement(children: .contain)
+    }
+    private var activeStage: Int { progress.stage == "validating" ? 2 : ["received", "analyzing"].contains(progress.stage) ? 1 : 0 }
+    private func stage(_ title: String, index: Int) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: index < activeStage ? "checkmark.circle.fill" : index == activeStage ? "circle.inset.filled" : "circle")
+                .foregroundStyle(index <= activeStage ? Theme.green : .secondary)
+            Text(title).font(.subheadline).foregroundStyle(index <= activeStage ? Color.primary : Color.secondary)
+            Spacer()
+            if index == activeStage { Text("进行中").font(.caption2).foregroundStyle(Theme.green) }
+            else if index < activeStage { Text("已完成").font(.caption2).foregroundStyle(.secondary) }
+        }
     }
 }
 

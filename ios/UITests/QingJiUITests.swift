@@ -5,10 +5,10 @@ final class QingJiUITests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
-                                "-serviceURL", "http://localhost:8787"]
+                                "-serviceURL", "http://localhost:8787", "-uiTestPhoto"]
         app.launch()
         XCTAssertTrue(app.staticTexts["app.build"].waitForExistence(timeout: 8))
-        XCTAssertEqual(app.staticTexts["app.build"].label, "版本 0.4.1 · 构建 6")
+        XCTAssertEqual(app.staticTexts["app.build"].label, "版本 0.5.0 · 构建 7")
         capture("00-注册与版本信息")
         login("registered-user", registering: true, in: app)
         let profile = app.buttons["profile.open"]
@@ -106,6 +106,62 @@ final class QingJiUITests: XCTestCase {
         login("registered-user", in: app)
         XCTAssertTrue(manual.waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["intake.total"].label, "125")
+        verifyPhotoCancellationAndReview(in: app)
+        app.tabBars.buttons["我的"].tap()
+        signOut(in: app)
+        login("first-user", in: app)
+        let restored = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "1500"), object: app.staticTexts["intake.total"])
+        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 30), .completed)
+        verifyRepeatedNavigation(in: app)
+    }
+
+    private func verifyPhotoCancellationAndReview(in app: XCUIApplication) {
+        app.buttons["meal.photo"].tap()
+        let start = app.buttons["photo.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10))
+        reveal(start, in: app)
+        start.tap()
+        let cancel = app.buttons["analysis.cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 8))
+        reveal(cancel, in: app)
+        capture("11-AI处理进度")
+        cancel.tap()
+        XCTAssertTrue(app.staticTexts["photo.cancelled"].waitForExistence(timeout: 10))
+        reveal(start, in: app)
+        start.tap()
+        let result = app.staticTexts["photo.result"]
+        XCTAssertTrue(result.waitForExistence(timeout: 20))
+        capture("12-照片分析结果")
+        let review = app.buttons["photo.review"]
+        reveal(review, in: app)
+        review.tap()
+        XCTAssertTrue(app.buttons["meal.save"].waitForExistence(timeout: 5))
+        capture("13-AI食物核对")
+        app.navigationBars["确认这餐"].buttons["取消"].tap()
+        app.navigationBars["拍照记餐"].buttons["关闭"].tap()
+        XCTAssertEqual(app.staticTexts["intake.total"].label, "125", "Unconfirmed AI results must not be saved")
+    }
+
+    private func verifyRepeatedNavigation(in app: XCUIApplication) {
+        for _ in 0..<6 {
+            app.tabBars.buttons["趋势"].tap()
+            for mode in ["周", "月", "年"] {
+                let picker = app.segmentedControls["trends.period"]
+                XCTAssertTrue(picker.waitForExistence(timeout: 5))
+                picker.buttons[mode].tap()
+                let range = app.staticTexts["trends.range"]
+                let format = mode == "周" ? "label CONTAINS %@" : "label ENDSWITH %@"
+                let expected = mode == "周" ? "—" : mode
+                let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: format, expected), object: range)
+                XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed, "Selected period and rendered data must agree")
+            }
+            app.tabBars.buttons["今日"].tap()
+            XCTAssertTrue(app.buttons["meal.manual"].waitForExistence(timeout: 5))
+            app.tabBars.buttons["我的"].tap()
+            XCTAssertTrue(app.staticTexts["app.build"].waitForExistence(timeout: 5))
+        }
+        app.tabBars.buttons["趋势"].tap()
+        capture("14-730天历史数据与连续切换")
     }
 
     private func login(_ name: String, registering: Bool = false, in app: XCUIApplication) {

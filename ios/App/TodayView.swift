@@ -10,169 +10,174 @@ struct TodayView: View {
     @State private var photo = false
     @State private var metabolism = false
     @State private var editing: Meal?
-    private var meals: [Meal] { store.snapshot.meals(on: day) }
-    private var intake: Double { meals.reduce(0) { $0 + $1.totalKcal } }
+    @State private var chooseDate = false
 
     var body: some View {
+        let meals = store.snapshot.meals(on: day)
+        let intake = meals.reduce(0) { $0 + $1.totalKcal }
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
+                LazyVStack(spacing: 14) {
                     dateNavigation
+                    intakeCard(intake)
                     if let profile = store.snapshot.profile {
-                        intakeCard(profile)
                         MetabolismCard(profile: profile, assessment: store.snapshot.metabolism) { metabolism = true }
                     }
-                    if store.snapshot.profile == nil {
-                        Button("完善个人资料，查看代谢估算") { profileEditor = true }
-                            .accessibilityIdentifier("profile.open")
-                        Card {
-                            Text("已记录摄入")
-                            HStack(alignment: .firstTextBaseline) {
-                                Text("\(Int(intake))").font(.largeTitle.bold()).accessibilityIdentifier("intake.total")
-                                Text("kcal")
-                            }
-                        }
-                    }
-                    Text(store.cloudMessage).font(.caption).foregroundStyle(.secondary)
                     activityCard
-                    mealList
-                }.padding(.horizontal, 18).padding(.bottom, 16)
-            }
-            .background(Theme.background)
-            .navigationTitle(Calendar.current.isDateInToday(day) ? "今日" : "饮食记录")
-            .safeAreaInset(edge: .bottom) {
-                HStack(spacing: 12) {
-                    Button { photo = true } label: { Label("拍照记餐", systemImage: "camera") }
-                        .buttonStyle(PrimaryButtonStyle())
-                    Button { manual = true } label: {
-                        Label("手动添加", systemImage: "plus").font(.headline).padding(.vertical, 15).padding(.horizontal, 16)
-                            .background(Theme.card, in: RoundedRectangle(cornerRadius: 16))
-                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.green, lineWidth: 1))
-                    }
-                    .accessibilityIdentifier("meal.manual")
-                }.padding(.horizontal, 18).padding(.vertical, 10).background(.bar)
-            }
-            .sheet(isPresented: $profileEditor) { ProfileEditor(onboarding: false) }
-            .refreshable { await health.refresh(for: day) }
-            .task { await health.refresh(for: day) }
-            .onChange(of: day) { _, value in Task { await health.refresh(for: value) } }
-            .onChange(of: scenePhase) { _, value in if value == .active { Task { await health.refresh(for: day) } } }
-            .sheet(isPresented: $manual) { MealEditor(initialDate: day) }
-            .sheet(isPresented: $photo) { PhotoMealView(initialDate: day) }
-            .sheet(item: $editing) { meal in MealEditor(existing: meal, initialDate: day) }
-            .sheet(isPresented: $metabolism) { MetabolismDetailView() }
+                    mealList(meals)
+                }.padding(.horizontal, 18).padding(.bottom, 18)
+            }.background(Theme.background)
+                .navigationTitle(Calendar.current.isDateInToday(day) ? "今日" : "饮食记录")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(Theme.background, for: .navigationBar)
+                .safeAreaInset(edge: .bottom) {
+                    HStack(spacing: 10) {
+                        Button { photo = true } label: { Label("拍照记餐", systemImage: "camera") }
+                            .buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("meal.photo")
+                        Button { manual = true } label: {
+                            Label("手动添加", systemImage: "plus").font(.system(size: 15, weight: .semibold))
+                                .padding(.vertical, 14).padding(.horizontal, 16)
+                                .background(Theme.card, in: RoundedRectangle(cornerRadius: 14))
+                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.green.opacity(0.5), lineWidth: 1))
+                        }.accessibilityIdentifier("meal.manual")
+                    }.padding(.horizontal, 18).padding(.vertical, 10).background(Theme.background)
+                }
+                .sheet(isPresented: $profileEditor) { ProfileEditor(onboarding: false) }
+                .sheet(isPresented: $chooseDate) {
+                    NavigationStack {
+                        DatePicker("记录日期", selection: $day, in: ...Date(), displayedComponents: .date)
+                            .datePickerStyle(.graphical).padding().environment(\.locale, Locale(identifier: "zh_CN"))
+                            .navigationTitle("选择日期").navigationBarTitleDisplayMode(.inline)
+                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { chooseDate = false } } }
+                    }.presentationDetents([.medium, .large])
+                }
+                .refreshable { await health.refresh(for: day) }
+                .task { await health.refresh(for: day) }
+                .onChange(of: day) { _, value in Task { await health.refresh(for: value) } }
+                .onChange(of: scenePhase) { _, value in if value == .active { Task { await health.refresh(for: day) } } }
+                .sheet(isPresented: $manual) { MealEditor(initialDate: day) }
+                .sheet(isPresented: $photo) { PhotoMealView(initialDate: day) }
+                .sheet(item: $editing) { meal in MealEditor(existing: meal, initialDate: day) }
+                .sheet(isPresented: $metabolism) { MetabolismDetailView() }
         }
     }
 
     private var dateNavigation: some View {
-        HStack {
-            Button { moveDay(-1) } label: { Image(systemName: "chevron.left").frame(width: 36, height: 36) }
-                .accessibilityLabel("前一天")
-            DatePicker("记录日期", selection: $day, in: ...Date(), displayedComponents: .date)
-                .labelsHidden().datePickerStyle(.compact).environment(\.locale, Locale(identifier: "zh_CN"))
-            Spacer()
-            if !Calendar.current.isDateInToday(day) { Button("今天") { day = Date() }.font(.subheadline) }
-            Button { moveDay(1) } label: { Image(systemName: "chevron.right").frame(width: 36, height: 36) }
+        HStack(spacing: 8) {
+            Button { moveDay(-1) } label: { Image(systemName: "chevron.left").frame(width: 32, height: 40) }.accessibilityLabel("前一天")
+            Button { chooseDate = true } label: {
+                HStack(spacing: 7) {
+                    Text(day.formatted(.dateTime.month().day().weekday())).font(.subheadline.weight(.medium))
+                    Image(systemName: "chevron.down").font(.caption2)
+                }
+            }.buttonStyle(.plain)
+            Spacer(minLength: 0)
+            Image(systemName: store.cloudSyncing ? "arrow.triangle.2.circlepath" : store.cloudMessage == "已同步" ? "checkmark.icloud" : "icloud")
+                .font(.caption).foregroundStyle(.secondary).accessibilityLabel(store.cloudMessage)
+            if !Calendar.current.isDateInToday(day) { Button("今天") { day = Date() }.font(.caption) }
+            Button { moveDay(1) } label: { Image(systemName: "chevron.right").frame(width: 32, height: 40) }
                 .disabled(Calendar.current.isDateInToday(day)).accessibilityLabel("后一天")
         }
     }
-
     private func moveDay(_ offset: Int) {
         if let next = Calendar.current.date(byAdding: .day, value: offset, to: day) { day = min(next, Date()) }
     }
-
-    private func intakeCard(_ profile: Profile) -> some View {
+    private func intakeCard(_ intake: Double) -> some View {
         Card {
-            HStack(spacing: 20) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("已记录摄入").font(.headline)
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("今日摄入").font(.subheadline.weight(.semibold))
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text(intake, format: .number.precision(.fractionLength(0))).font(.system(size: 43, weight: .bold, design: .rounded)).minimumScaleFactor(0.6).accessibilityIdentifier("intake.total")
-                        Text("kcal").font(.subheadline).foregroundStyle(.secondary)
+                        Text("\(Int(intake.rounded()))").font(.system(size: 38, weight: .bold, design: .rounded))
+                            .minimumScaleFactor(0.6).monospacedDigit().accessibilityIdentifier("intake.total")
+                        Text("kcal").font(.caption).foregroundStyle(.secondary)
                     }
-                    Text("目标 \(Int(profile.dailyTarget)) kcal").font(.subheadline).foregroundStyle(.secondary)
-                    let remaining = profile.dailyTarget - intake
-                    Text(remaining >= 0 ? "还可摄入 \(Int(remaining.rounded())) kcal" : "超过目标 \(Int((-remaining).rounded())) kcal")
-                        .font(.subheadline.weight(.semibold)).foregroundStyle(remaining >= 0 ? Theme.green : .orange)
+                    if let profile = store.snapshot.profile {
+                        Text("目标 \(Int(profile.dailyTarget)) kcal").font(.caption).foregroundStyle(.secondary)
+                        let remaining = profile.dailyTarget - intake
+                        Text(remaining >= 0 ? "还可摄入 \(Int(remaining.rounded())) kcal" : "超过目标 \(Int((-remaining).rounded())) kcal")
+                            .font(.caption.weight(.semibold)).foregroundStyle(remaining >= 0 ? Theme.green : Theme.orange)
+                    } else {
+                        Text("记下每一餐，慢慢看见变化").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Spacer(minLength: 0)
                 ZStack {
-                    Circle().stroke(.quaternary, lineWidth: 10)
-                    Circle().trim(from: 0, to: min(1, intake / profile.dailyTarget))
-                        .stroke(Theme.green, style: StrokeStyle(lineWidth: 10, lineCap: .round)).rotationEffect(.degrees(-90))
-                    Image(systemName: "fork.knife").font(.title2).foregroundStyle(Theme.green)
-                }.frame(width: 82, height: 82).accessibilityHidden(true)
+                    Circle().stroke(Theme.softGreen, lineWidth: 9)
+                    if let target = store.snapshot.profile?.dailyTarget {
+                        Circle().trim(from: 0, to: min(1, intake / target))
+                            .stroke(Theme.green, style: StrokeStyle(lineWidth: 9, lineCap: .round)).rotationEffect(.degrees(-90))
+                    }
+                    Image(systemName: "fork.knife").font(.title3).foregroundStyle(Theme.green)
+                }.frame(width: 76, height: 76).accessibilityHidden(true)
             }
-            Text("仅统计已保存的饮食，漏记不会自动补算。")
-                .font(.caption).foregroundStyle(.secondary)
+            if store.snapshot.profile == nil {
+                Divider()
+                Button { profileEditor = true } label: {
+                    HStack {
+                        Text("完善资料，了解代谢与摄入目标").font(.caption.weight(.semibold))
+                        Spacer(); Image(systemName: "arrow.up.right").font(.caption)
+                    }
+                }.accessibilityIdentifier("profile.open")
+            }
         }
     }
-
     private var activityCard: some View {
-        Card {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "flame.fill").font(.title).foregroundStyle(.orange)
+        let cached = store.snapshot.activityDays.first { $0.day == ActivityDay.key(for: day) && $0.timeZone == TimeZone.current.identifier }
+        let energy = health.activeKcal ?? cached?.activeKcal
+        return Card {
+            HStack(spacing: 11) {
+                Image(systemName: "flame.fill").foregroundStyle(Theme.orange).font(.title3)
+                    .frame(width: 38, height: 42).background(Theme.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("活动消耗").font(.headline)
-                    Text(health.message).font(.caption).foregroundStyle(.secondary)
-                    if let time = health.lastUpdated, health.activeKcal != nil {
-                        Text("更新于 \(time.formatted(date: .omitted, time: .shortened))").font(.caption2).foregroundStyle(.secondary)
-                    }
+                    Text("活动消耗").font(.subheadline.weight(.semibold))
+                    Text(energy == nil ? "连接苹果健康，补全每日消耗" : "苹果健康 · 日常活动与训练")
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
-                Spacer(minLength: 0)
+                Spacer(minLength: 4)
                 if health.refreshing { ProgressView() }
-                else if let value = health.activeKcal { Text("\(Int(value.rounded())) kcal").font(.headline).monospacedDigit() }
-                else if let cached = store.snapshot.activityDays.first(where: {
-                    $0.day == ActivityDay.key(for: day) && $0.timeZone == TimeZone.current.identifier
-                }) {
-                    VStack(alignment: .trailing) {
-                        Text("\(Int(cached.activeKcal.rounded())) kcal").font(.headline).monospacedDigit()
-                        Text("已保存汇总").font(.caption2).foregroundStyle(.secondary)
+                else {
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text(energy.map { "\(Int($0.rounded()))" } ?? "—").font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
+                        Text("kcal").font(.caption2).foregroundStyle(.secondary)
                     }
                 }
-                else { Text("—").foregroundStyle(.secondary) }
             }
             if !health.hasRequested {
-                Button("连接苹果健康") { Task { await health.connect() } }.font(.subheadline.weight(.semibold))
-            } else {
-                Text("活动值已包含相应训练，不另加跑步或步数热量。")
-                    .font(.caption2).foregroundStyle(.secondary)
+                Button("连接苹果健康") { Task { await health.connect() } }.font(.caption.weight(.semibold))
+            } else if energy == nil {
+                Text(health.message).font(.caption2).foregroundStyle(.secondary)
             }
         }
     }
-
-    private var mealList: some View {
+    private func mealList(_ meals: [Meal]) -> some View {
         Card {
-            HStack { Text("当天饮食").font(.headline); Spacer(); Text("\(meals.count) 条记录").font(.caption).foregroundStyle(.secondary) }
+            HStack { Text("今日饮食").font(.headline); Spacer(); Text("\(meals.count) 条记录").font(.caption).foregroundStyle(.secondary) }
             if meals.isEmpty {
                 VStack(spacing: 10) {
-                    Image(systemName: "fork.knife").font(.system(size: 32)).foregroundStyle(Theme.green)
-                    Text("从记录第一餐开始").font(.headline)
-                    Text("拍张照片，或直接输入热量。也可以切换日期补记。")
-                        .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                    Image(systemName: "leaf").font(.system(size: 30)).foregroundStyle(Theme.green)
+                    Text("从第一餐开始").font(.subheadline.weight(.semibold))
+                    Text("拍张照片，或手动记录食物与热量").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity).padding(.vertical, 20)
-            } else {
-                ForEach(meals) { meal in
-                    Button { editing = meal } label: {
-                        HStack(spacing: 12) {
-                            if let image = store.photo(for: meal) {
-                                Image(uiImage: image).resizable().scaledToFill().frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 12))
-                            } else {
-                                Image(systemName: meal.kind.symbol).font(.title2).foregroundStyle(Theme.green)
-                                    .frame(width: 48, height: 48).background(Theme.softGreen, in: RoundedRectangle(cornerRadius: 12))
-                            }
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(meal.kind.label).font(.headline)
-                                Text(meal.items.map(\.name).joined(separator: "、")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                                Text(meal.consumedAt, style: .time).font(.caption2).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Text("\(Int(meal.totalKcal.rounded())) kcal").font(.subheadline.weight(.semibold)).monospacedDigit()
-                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                        }.foregroundStyle(.primary)
-                    }.buttonStyle(.plain)
-                    if meal.id != meals.last?.id { Divider() }
-                }
+            }
+            ForEach(meals) { meal in
+                Button { editing = meal } label: {
+                    HStack(spacing: 11) {
+                        MealThumbnail(url: store.photoURL(for: meal), symbol: meal.kind.symbol)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(meal.items.map(\.name).joined(separator: "、")).font(.subheadline.weight(.medium)).lineLimit(1)
+                            Text("\(meal.kind.label) · \(meal.consumedAt.formatted(date: .omitted, time: .shortened))")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 3)
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("\(Int(meal.totalKcal.rounded()))").font(.system(size: 19, weight: .semibold, design: .rounded))
+                            Text("kcal").font(.caption2).foregroundStyle(.secondary)
+                        }
+                        Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                    }.foregroundStyle(.primary)
+                }.buttonStyle(.plain)
+                if meal.id != meals.last?.id { Divider() }
             }
         }
     }

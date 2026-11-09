@@ -86,6 +86,8 @@ final class HealthService: ObservableObject {
     }
 
     func refresh(for day: Date) async {
+        let sameDay = Calendar.current.isDate(selectedDay, inSameDayAs: day)
+        if refreshing && sameDay { return }
         selectedDay = day
         guard hasRequested, available,
               let type = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else {
@@ -95,7 +97,7 @@ final class HealthService: ObservableObject {
         let generation = UUID()
         refreshGeneration = generation
         refreshing = true
-        activeKcal = nil
+        if !sameDay { activeKcal = nil }
         let calendar = Calendar.current
         let start = calendar.startOfDay(for: day)
         guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { refreshing = false; return }

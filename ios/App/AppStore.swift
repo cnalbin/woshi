@@ -4,6 +4,7 @@ import UIKit
 @MainActor
 final class AppStore: ObservableObject {
     @Published private(set) var snapshot = AppSnapshot()
+    @Published private(set) var dataRevision = 0
     @Published var errorMessage: String?
     @Published private(set) var storageUnavailable = false
     @Published private(set) var cloudEnabled = false
@@ -18,9 +19,11 @@ final class AppStore: ObservableObject {
     private let file: URL
     private let workspaceID: String
     private let legacyFolder: URL
+    private let configuration: ServiceConfiguration
 
-    init(workspaceID: String) {
+    init(workspaceID: String, configuration: ServiceConfiguration = .current) {
         self.workspaceID = workspaceID
+        self.configuration = configuration
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         legacyFolder = documents.appendingPathComponent("QingJi", isDirectory: true)
         folder = workspaceID.isEmpty ? legacyFolder : documents.appendingPathComponent("QingJiAccounts", isDirectory: true)
@@ -54,8 +57,7 @@ final class AppStore: ObservableObject {
     }
 
     var service: ServiceConfiguration {
-        let current = ServiceConfiguration.current
-        return current.workspaceID == workspaceID ? current : .init(baseURL: "", token: "", workspaceID: "")
+        configuration.workspaceID == workspaceID ? configuration : .init(baseURL: "", token: "", workspaceID: "")
     }
 
     var canImportLegacy: Bool {
@@ -80,11 +82,13 @@ final class AppStore: ObservableObject {
         try commit(copy, schedule: false)
     }
 
-    private func commit(_ next: AppSnapshot, schedule: Bool = true) throws {
+    private func commit(_ next: AppSnapshot, schedule: Bool = true, encoded: Data? = nil) throws {
         guard !storageUnavailable else { throw StorageError.unavailable }
-        let data = try JSONEncoder().encode(next)
+        guard next != snapshot else { return }
+        let data = try encoded ?? JSONEncoder().encode(next)
         try data.write(to: file, options: [.atomic, .completeFileProtection])
         snapshot = next
+        dataRevision += 1
         generation += 1
         if schedule { scheduleCloudBackup() }
     }
@@ -145,12 +149,27 @@ final class AppStore: ObservableObject {
         return UIImage(contentsOfFile: folder.appendingPathComponent(filename).path)
     }
 
+    func photoURL(for meal: Meal) -> URL? {
+        guard let name = meal.photoFilename, Self.safePhotoName(name) else { return nil }
+        return folder.appendingPathComponent(name)
+    }
+
     func saveActivity(_ value: ActivityDay) {
-        guard value.activeKcal.isFinite, value.activeKcal >= 0 else { return }
-        if let old = snapshot.activityDays.first(where: { $0.id == value.id }), abs(old.activeKcal - value.activeKcal) < 0.01 { return }
+        saveActivities([value])
+    }
+
+    func saveActivities(_ values: [ActivityDay]) {
+        guard !values.isEmpty else { return }
+        var indexed = Dictionary(snapshot.activityDays.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
+        var changed = false
+        for value in values where value.activeKcal.isFinite && value.activeKcal >= 0 {
+            if let old = indexed[value.id], abs(old.activeKcal - value.activeKcal) < 0.01 { continue }
+            indexed[value.id] = value
+            changed = true
+        }
+        guard changed else { return }
         var next = snapshot
-        next.activityDays.removeAll { $0.id == value.id }
-        next.activityDays.append(value)
+        next.activityDays = indexed.values.sorted { $0.id < $1.id }
         do { try commit(next) } catch { errorMessage = error.localizedDescription }
     }
 
@@ -220,10 +239,25 @@ final class AppStore: ObservableObject {
             let client = CloudClient(configuration: configuration)
             let remote = try await client.read()
             let baselineFile = folder.appendingPathComponent("sync-baseline.json")
-            let baseline = (try? JSONDecoder().decode(AppSnapshot.self, from: Data(contentsOf: baselineFile))) ?? AppSnapshot()
+            let baseline = await Task.detached(priority: .utility) {
+                (try? JSONDecoder().decode(AppSnapshot.self, from: Data(contentsOf: baselineFile))) ?? AppSnapshot()
+            }.value
+            var comparable = snapshot
+            comparable.aiConsent = false
+            if remote.snapshot == baseline && comparable == baseline {
+                cloudState.lastSynced = Date()
+                cloudState.enabled = true
+                cloudState.identity = client.identity
+                try saveCloudState()
+                if cloudMessage != "已同步" { cloudMessage = "已同步" }
+                return
+            }
             var merged = snapshot
             if !keepLocal {
-                merged = try SnapshotMerge.merge(base: baseline, local: snapshot, remote: remote.snapshot ?? AppSnapshot())
+                let local = snapshot
+                merged = try await Task.detached(priority: .utility) {
+                    try SnapshotMerge.merge(base: baseline, local: local, remote: remote.snapshot ?? AppSnapshot())
+                }.value
             }
             let names = Set(merged.meals.compactMap(\.photoFilename))
             for reference in remote.photos where names.contains(reference.filename) {
@@ -231,33 +265,42 @@ final class AppStore: ObservableObject {
                 let destination = folder.appendingPathComponent(reference.filename)
                 if !FileManager.default.fileExists(atPath: destination.path) {
                     let data = try await client.download(digest: reference.sha256)
-                    try data.write(to: destination, options: [.atomic, .completeFileProtection])
+                    try await Task.detached(priority: .utility) {
+                        try data.write(to: destination, options: [.atomic, .completeFileProtection])
+                    }.value
                 }
             }
             var references: [CloudPhoto] = []
             let uploaded = Set(remote.photos.map(\.sha256))
             for name in names.sorted() {
                 guard Self.safePhotoName(name) else { throw StorageError.invalidData }
-                let data = try Data(contentsOf: folder.appendingPathComponent(name))
-                let digest = CloudClient.hash(data)
+                let url = folder.appendingPathComponent(name)
+                let (data, digest) = try await Task.detached(priority: .utility) {
+                    let data = try Data(contentsOf: url)
+                    return (data, CloudClient.hash(data))
+                }.value
                 if !uploaded.contains(digest) { try await client.upload(data, digest: digest) }
                 references.append(CloudPhoto(filename: name, sha256: digest))
             }
             guard savedGeneration == generation, client.identity == service.workspaceID else { return }
             // Persist downloaded records before uploading, so a process interruption preserves edits.
             merged.aiConsent = snapshot.aiConsent
-            try commit(merged, schedule: false)
+            if merged != snapshot {
+                let value = merged
+                let encoded = try await Task.detached(priority: .utility) { try JSONEncoder().encode(value) }.value
+                guard savedGeneration == generation else { return }
+                try commit(merged, schedule: false, encoded: encoded)
+            }
             settledGeneration = generation
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .sortedKeys
             var upload = merged
             upload.aiConsent = false
-            let remoteData = try remote.snapshot.map { try encoder.encode($0) }
-            let localData = try encoder.encode(upload)
-            if remoteData != localData {
+            if remote.snapshot != upload {
                 _ = try await client.write(CloudSubmission(expectedRevision: remote.revision, snapshot: upload, photos: references))
             }
-            try JSONEncoder().encode(upload).write(to: baselineFile, options: [.atomic, .completeFileProtection])
+            let baselineValue = upload
+            try await Task.detached(priority: .utility) {
+                try JSONEncoder().encode(baselineValue).write(to: baselineFile, options: [.atomic, .completeFileProtection])
+            }.value
             cloudState.lastSynced = Date()
             cloudState.enabled = true
             cloudState.identity = client.identity

@@ -39,7 +39,7 @@ struct AccountWorkspace: View {
             .task(id: health.hasRequested) {
                 if health.hasRequested {
                     let values = await health.history()
-                    for value in values where !Task.isCancelled { store.saveActivity(value) }
+                    if !Task.isCancelled { store.saveActivities(values) }
                 }
             }
             .onDisappear { health.stop(); store.cancelCloudBackup() }

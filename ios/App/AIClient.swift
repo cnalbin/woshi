@@ -58,7 +58,7 @@ enum AIError: LocalizedError {
     var errorDescription: String? { if case .message(let value) = self { return value }; return nil }
 }
 
-struct AnalysisProgress: Codable {
+struct AnalysisProgress: Codable, Equatable {
     var stage: String
     var message: String
 }

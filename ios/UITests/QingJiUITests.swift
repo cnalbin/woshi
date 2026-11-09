@@ -7,6 +7,9 @@ final class QingJiUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
                                 "-serviceURL", "http://localhost:8787"]
         app.launch()
+        XCTAssertTrue(app.staticTexts["app.build"].waitForExistence(timeout: 8))
+        XCTAssertEqual(app.staticTexts["app.build"].label, "版本 0.4.1 · 构建 6")
+        capture("00-注册与版本信息")
         login("registered-user", registering: true, in: app)
         let profile = app.buttons["profile.open"]
         XCTAssertTrue(profile.waitForExistence(timeout: 15))

@@ -7,8 +7,11 @@ xcodebuild -project ios/QingJi.xcodeproj -scheme QingJi -configuration Release \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 mkdir -p build/ipa/Payload
 ditto build/DerivedData/Build/Products/Release-iphoneos/QingJi.app build/ipa/Payload/QingJi.app
+SOURCE_REVISION=$(git rev-parse HEAD)
+/usr/libexec/PlistBuddy -c "Add :QingJiSourceRevision string $SOURCE_REVISION" build/ipa/Payload/QingJi.app/Info.plist
+IPA_NAME="QingJi-v0.4.1-build6-unsigned.ipa"
 cd build/ipa
-ditto -c -k --keepParent Payload ../QingJi-unsigned.ipa
+ditto -c -k --keepParent Payload "../$IPA_NAME"
 cd ../..
-python3 scripts/verify_ipa.py build/QingJi-unsigned.ipa
-shasum -a 256 build/QingJi-unsigned.ipa > build/QingJi-unsigned.ipa.sha256
+python3 scripts/verify_ipa.py "build/$IPA_NAME" --version 0.4.1 --build 6 --display-name '轻记新版' --revision "$SOURCE_REVISION"
+shasum -a 256 "build/$IPA_NAME" > "build/$IPA_NAME.sha256"

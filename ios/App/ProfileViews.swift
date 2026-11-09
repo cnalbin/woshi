@@ -180,6 +180,8 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 5) {
                             Text("轻记").font(.title2.bold())
                             Text("记下每一餐，看见每一天").font(.caption).foregroundStyle(.secondary)
+                            Text(AppBuild.label).font(.caption).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("app.build")
                         }
                     }.padding(.vertical, 6)
                 }
@@ -228,7 +230,7 @@ struct SettingsView: View {
                     Text("本机支持离线记录，联网后自动同步。换机登录同一服务器的相同账号，即可同步已有记录。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Section { Text("轻记 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "") · 热量与代谢为估算值").font(.caption).foregroundStyle(.secondary) }
+                Section { Text("轻记 · \(AppBuild.label) · 热量与代谢为估算值").font(.caption).foregroundStyle(.secondary) }
             }
             .navigationTitle("我的")
             .sheet(isPresented: $editProfile) { ProfileEditor(onboarding: false) }
@@ -275,6 +277,8 @@ struct ServiceSettingsView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                     Text("欢迎使用轻记").font(.largeTitle.bold())
                     Text("创建账号，开始记录每一餐").foregroundStyle(.secondary)
+                    Text(AppBuild.label).font(.caption).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("app.build")
                 }.listRowBackground(Color.clear)
                 Section {
                     TextField("https://api.example.com", text: $address)

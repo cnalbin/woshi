@@ -71,8 +71,8 @@ jobs:
         with:
           name: QingJi-unsigned-IPA
           path: |
-            build/QingJi-unsigned.ipa
-            build/QingJi-unsigned.ipa.sha256
+            build/QingJi-v*-unsigned.ipa
+            build/QingJi-v*-unsigned.ipa.sha256
           if-no-files-found: error
           retention-days: 30
       - name: Test real app onboarding, saving and process restart

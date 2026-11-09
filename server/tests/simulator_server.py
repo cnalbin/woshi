@@ -26,7 +26,17 @@ async def fake_model(request):
             {"name": "米饭", "estimatedGrams": 150.0, "estimatedKcal": 174.0},
             {"name": "宫保鸡丁", "estimatedGrams": 250.0, "estimatedKcal": 560.0},
             {"name": "炒青菜", "estimatedGrams": 150.0, "estimatedKcal": 166.0}],
-            "summary": "UI 测试模拟食物结果，等待用户核对。", "assumptions": ["按整份估算，用油量待确认"], "questions": ["实际吃下了多少？"]}
+            "summary": "UI 测试模拟食物结果，等待用户核对。", "assumptions": ["按整份估算，用油量待确认"], "questions": []}
+        if "用户对待确认项的回答" in content[0]["text"]:
+            assert '"answer": "糙米"' in content[0]["text"]
+            assert '"answer": null' in content[0]["text"]
+            result["items"][0]["name"] = "糙米"
+            result["summary"] = "已按确认的糙米重新估算。"
+        else:
+            result["clarifications"] = [
+                {"question": "是哪一种米饭？", "options": ["白米", "糙米"]},
+                {"question": "炒青菜用了多少油？", "options": ["少油", "正常用油"]},
+            ]
     else:
         result = {"estimatedKcal": 1700, "summary": "UI 集成测试：已通过真实 SSE 接收代谢结果。",
                   "assumptions": ["测试模拟值"]}

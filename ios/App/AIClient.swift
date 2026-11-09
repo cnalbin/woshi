@@ -68,9 +68,16 @@ struct ServiceError: Codable { var code: String; var message: String }
 struct AIClient {
     let configuration: ServiceConfiguration
 
-    func meal(image: Data, note: String, progress: @escaping @MainActor (AnalysisProgress) -> Void) async throws -> MealAnalysis {
-        struct Input: Encodable { var imageBase64: String; var note: String }
-        return try await request(path: "v1/analyze/meal", input: Input(imageBase64: image.base64EncodedString(), note: note), progress: progress)
+    func meal(image: Data, note: String, answers: [MealClarificationAnswer] = [],
+              progress: @escaping @MainActor (AnalysisProgress) -> Void) async throws -> MealAnalysis {
+        struct Input: Encodable {
+            let imageBase64: String
+            let note: String
+            let confirmationFlow = true
+            let answers: [MealClarificationAnswer]
+        }
+        let input = Input(imageBase64: image.base64EncodedString(), note: note, answers: answers)
+        return try await request(path: "v1/analyze/meal", input: input, progress: progress)
     }
 
     func metabolism(profile: Profile, progress: @escaping @MainActor (AnalysisProgress) -> Void) async throws -> MetabolismResponse {

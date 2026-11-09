@@ -105,9 +105,16 @@ class BackupWrite(Model):
         return self
 
 
+class MealAnswer(Model):
+    question: str = Field(min_length=1, max_length=300)
+    answer: str | None = Field(default=None, max_length=200)
+
+
 class MealInput(Model):
     imageBase64: str = Field(min_length=16, max_length=5_400_000)
     note: str = Field(default="", max_length=500)
+    confirmationFlow: StrictBool = False
+    answers: list[MealAnswer] = Field(default_factory=list, max_length=8)
 
 
 class RecognizedFood(Model):
@@ -116,12 +123,19 @@ class RecognizedFood(Model):
     estimatedKcal: Annotated[Number, Field(ge=0, le=10000)]
 
 
+class MealClarification(Model):
+    question: str = Field(min_length=1, max_length=300)
+    options: list[Annotated[str, Field(min_length=1, max_length=100)]] = Field(default_factory=list, max_length=5)
+
+
 class MealResult(Model):
     isFood: StrictBool
     items: list[RecognizedFood] = Field(max_length=20)
     summary: str = Field(min_length=1, max_length=600)
     assumptions: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(max_length=8)
     questions: list[Annotated[str, Field(min_length=1, max_length=300)]] = Field(max_length=8)
+    clarifications: list[MealClarification] = Field(default_factory=list, max_length=8)
+    portionBasis: Literal["served", "consumed"] = "served"
 
     @model_validator(mode="after")
     def food_items(self):

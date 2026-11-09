@@ -8,7 +8,7 @@ final class QingJiUITests: XCTestCase {
                                 "-serviceURL", "http://localhost:8787", "-uiTestPhoto"]
         app.launch()
         XCTAssertTrue(app.staticTexts["app.build"].waitForExistence(timeout: 8))
-        XCTAssertEqual(app.staticTexts["app.build"].label, "版本 0.6.0 · 构建 8")
+        XCTAssertEqual(app.staticTexts["app.build"].label, "版本 0.7.0 · 构建 9")
         capture("00-注册与版本信息")
         login("registered-user", registering: true, in: app)
         let profile = app.buttons["profile.open"]
@@ -148,8 +148,23 @@ final class QingJiUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["photo.cancelled"].waitForExistence(timeout: 10))
         reveal(start, in: app)
         start.tap()
+        let confirmation = app.navigationBars["确认食物信息"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 20))
+        XCTAssertFalse(app.staticTexts["photo.result"].exists)
+        let proceed = app.buttons["confirmation.continue"]
+        XCTAssertFalse(proceed.isEnabled)
+        let rice = app.buttons["糙米"]
+        reveal(rice, in: app)
+        rice.tap()
+        let uncertain = app.buttons["confirmation.unknown.1"]
+        reveal(uncertain, in: app)
+        uncertain.tap()
+        capture("11b-确认食物信息")
+        XCTAssertTrue(proceed.isEnabled)
+        proceed.tap()
         let result = app.staticTexts["photo.result"]
         XCTAssertTrue(result.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["已按确认的糙米重新估算。"].exists)
         capture("12-照片分析结果")
         let review = app.buttons["photo.review"]
         reveal(review, in: app)

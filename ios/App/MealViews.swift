@@ -72,7 +72,11 @@ struct MealEditor: View {
                         Spacer()
                         Text("\(Int(total.rounded())) kcal").font(.title2.bold()).foregroundStyle(Theme.green)
                     }
-                } footer: { Text("食物列表显示整份，保存时按所选比例折算。已保存记录再次打开时，列表显示上次实际吃下的量。") }
+                } footer: {
+                    Text(analysis?.portionBasis == "consumed"
+                         ? "AI 已按你说明的实际摄入估算。若列表与实际相符，请保留「全部」，避免重复折算。"
+                         : "食物列表显示整份，保存时按所选比例折算。已保存记录再次打开时，列表显示上次实际吃下的量。")
+                }
                 if let summary = analysis?.summary ?? existing?.summary, !summary.isEmpty {
                     Section("估算依据") {
                         Label("AI 估算，保存前请核对", systemImage: "sparkles").foregroundStyle(Theme.green)
@@ -215,6 +219,12 @@ struct PhotoMealView: View {
     @State private var review = false
     @State private var saved = false
     @State private var showModel = false
+    @State private var pendingQuestions: [MealClarification] = []
+    @State private var choices: [Int: MealAnswerChoice] = [:]
+    @State private var customAnswers: [Int: String] = [:]
+    @State private var submittedAnswers: [MealClarificationAnswer] = []
+    @State private var showConfirmation = false
+    @State private var continueAfterConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -232,7 +242,7 @@ struct PhotoMealView: View {
                         Card {
                             Text("补充一点信息，估算更贴近这一餐").font(.subheadline.weight(.semibold))
                             TextField("例如：半碗米饭，鸡肉去皮，汤没喝", text: $note, axis: .vertical)
-                                .font(.subheadline).lineLimit(2...4).disabled(running)
+                                .font(.subheadline).lineLimit(2...4).disabled(running || !pendingQuestions.isEmpty)
                                 .accessibilityIdentifier("photo.note")
                                 .onChange(of: note) { _, value in if value.count > 500 { note = String(value.prefix(500)) } }
                             Text("可填写份量、做法和实际吃下的比例").font(.caption2).foregroundStyle(.secondary)
@@ -240,6 +250,17 @@ struct PhotoMealView: View {
                         if running {
                             AnalysisStatusView(progress: progress, startedAt: started, history: history) { task?.cancel() }
                                 .id("photo.status")
+                        } else if !pendingQuestions.isEmpty {
+                            Card {
+                                Label("还需确认 \(pendingQuestions.count) 项", systemImage: "questionmark.bubble")
+                                    .font(.headline)
+                                Button("查看待确认项") { showConfirmation = true }
+                                    .accessibilityIdentifier("photo.confirmation.open")
+                                if !submittedAnswers.isEmpty {
+                                    Button("按已填答案重试") { run(answers: submittedAnswers) }.buttonStyle(PrimaryButtonStyle())
+                                }
+                                Button("重新识别照片") { resetConfirmation(); begin() }.font(.caption)
+                            }
                         } else if analysis == nil {
                             Button { begin() } label: { Label(cancelled || error != nil ? "重新分析" : "开始 AI 分析", systemImage: "sparkles") }
                                 .buttonStyle(PrimaryButtonStyle()).disabled(imageData == nil || loadingImage)
@@ -301,6 +322,12 @@ struct PhotoMealView: View {
                 .sheet(isPresented: $review, onDismiss: { if saved { dismiss() } }) {
                     MealEditor(initialDate: initialDate, analysis: analysis, photoData: imageData) { saved = true }
                 }
+                .sheet(isPresented: $showConfirmation, onDismiss: resumeAfterConfirmation) {
+                    MealConfirmationView(questions: pendingQuestions, choices: $choices, customAnswers: $customAnswers) { answers in
+                        submittedAnswers = answers
+                        continueAfterConfirmation = true
+                    }
+                }
                 .sheet(isPresented: $showModel) {
                     NavigationStack {
                         ModelSettingsView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showModel = false } } }
@@ -330,7 +357,7 @@ struct PhotoMealView: View {
     }
     private func resultCard(_ result: MealAnalysis) -> some View {
         Card {
-            Label("识别完成，等你确认", systemImage: "checkmark.circle.fill")
+            Label("估算完成，核对后保存", systemImage: "checkmark.circle.fill")
                 .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.green).accessibilityIdentifier("photo.result")
             HStack(alignment: .firstTextBaseline) {
                 Text("\(Int(result.items.reduce(0) { $0 + $1.estimatedKcal }.rounded()))")
@@ -350,13 +377,14 @@ struct PhotoMealView: View {
                 }
             }
             Text(result.summary).font(.subheadline).foregroundStyle(.secondary)
-            DisclosureGroup("查看估算依据与待确认事项") {
+            if result.portionBasis == "consumed" {
+                Label("已按说明折算实际摄入，核对时可保留「全部」。", systemImage: "checkmark.circle")
+                    .font(.caption).foregroundStyle(Theme.green)
+            }
+            DisclosureGroup("查看估算依据") {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(result.assumptions.enumerated()), id: \.offset) { _, value in
                         Label(value, systemImage: "info.circle").font(.caption)
-                    }
-                    ForEach(Array(result.questions.enumerated()), id: \.offset) { _, value in
-                        Label(value, systemImage: "questionmark.circle").font(.caption)
                     }
                 }.foregroundStyle(.secondary).padding(.top, 6)
             }.font(.caption)
@@ -390,21 +418,34 @@ struct PhotoMealView: View {
             }.value
             try Task.checkCancellation()
             imageData = jpeg; preview = UIImage(data: jpeg); analysis = nil; error = nil; cancelled = false
+            resetConfirmation()
         } catch is CancellationError {} catch { self.error = error.localizedDescription }
     }
     private func begin() {
         guard store.service.isValid else { error = "请先在“我的 → NAS 账号”登录。"; return }
         if !store.snapshot.aiConsent { consent = true } else { run() }
     }
-    private func run() {
-        guard !running, let imageData else { return }
+    private func resetConfirmation() {
+        pendingQuestions = []
+        choices = [:]
+        customAnswers = [:]
+        submittedAnswers = []
+        continueAfterConfirmation = false
+    }
+    private func resumeAfterConfirmation() {
+        guard continueAfterConfirmation else { return }
+        continueAfterConfirmation = false
+        run(answers: submittedAnswers)
+    }
+    private func run(answers: [MealClarificationAnswer] = []) {
+        guard !running, !loadingImage, let imageData else { return }
         running = true; error = nil; cancelled = false; analysis = nil; started = Date()
-        progress = .init(stage: "uploading", message: "正在发送本次照片与补充说明")
+        progress = .init(stage: "uploading", message: answers.isEmpty ? "正在发送本次照片与补充说明" : "正在提交你确认的信息")
         history = [progress]
         task = Task { @MainActor in
             defer { running = false }
             do {
-                let response = try await AIClient(configuration: store.service).meal(image: imageData, note: note) { update in
+                let response = try await AIClient(configuration: store.service).meal(image: imageData, note: note, answers: answers) { update in
                     progress = update
                     if history.last?.stage != update.stage { history.append(update) }
                 }
@@ -412,7 +453,16 @@ struct PhotoMealView: View {
                 guard !response.items.isEmpty, response.items.count <= 20, response.items.map(\.foodItem).allSatisfy(\.isValid) else {
                     throw AIError.message("识别结果不完整，请重试或手动记录。")
                 }
-                analysis = response
+                if answers.isEmpty && !response.pendingQuestions.isEmpty {
+                    pendingQuestions = response.pendingQuestions
+                    showConfirmation = true
+                } else {
+                    guard answers.isEmpty || response.confirmationApplied == true else {
+                        throw AIError.message("服务器没有确认收到答案，请重试。")
+                    }
+                    resetConfirmation()
+                    analysis = response
+                }
             } catch is CancellationError { cancelled = true }
             catch { self.error = error.localizedDescription }
         }

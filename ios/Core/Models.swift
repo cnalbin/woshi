@@ -111,6 +111,26 @@ struct MealAnalysis: Codable, Equatable {
     var summary: String
     var assumptions: [String]
     var questions: [String]
+    var clarifications: [MealClarification]?
+    var portionBasis: String?
+    var confirmationApplied: Bool?
+
+    var pendingQuestions: [MealClarification] {
+        var seen = Set<String>()
+        let fallback = questions.map { MealClarification(question: $0, options: []) }
+        return ((clarifications ?? []) + fallback).filter { seen.insert($0.question).inserted }
+            .prefix(8).map { $0 }
+    }
+}
+
+struct MealClarification: Codable, Equatable {
+    let question: String
+    let options: [String]
+}
+
+struct MealClarificationAnswer: Encodable {
+    let question: String
+    let answer: String?
 }
 
 struct Meal: Identifiable, Codable, Equatable {

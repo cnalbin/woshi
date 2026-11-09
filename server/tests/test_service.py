@@ -70,6 +70,44 @@ def test_multimodal_photo_and_no_food(fixture):
         assert client.post("/v1/analyze/meal", json={"imageBase64": "x" * 20}).status_code == 400
 
 
+def test_photo_confirmation_refines_answers_and_preserves_legacy_output(fixture):
+    item = {"name": "玉米", "estimatedGrams": 150, "estimatedKcal": 165}
+    prompt = {"question": "实际吃了多少？", "options": ["半根", "一根"]}
+    seen = []
+
+    def model(request):
+        system, user = json.loads(request.content)["messages"]
+        seen.append((system["content"], user["content"][0]["text"]))
+        assert user["content"][1]["image_url"]["url"].endswith(base64.b64encode(PHOTO).decode())
+        refined = "用户对待确认项的回答" in user["content"][0]["text"]
+        return reply({"isFood": True, "items": [dict(item, estimatedKcal=82) if refined else item],
+                      "summary": "按半根估算" if refined else "初步估算", "assumptions": [],
+                      "questions": [], "clarifications": [prompt],
+                      "portionBasis": "consumed" if refined else "served"})
+
+    def result(response):
+        assert "event: result" in response.text
+        return json.loads([line[6:] for line in response.text.splitlines() if line.startswith("data: ")][-1])
+
+    client, _ = fixture(model)
+    with client:
+        photo = {"imageBase64": base64.b64encode(PHOTO).decode(), "note": "水煮"}
+        legacy = result(client.post("/v1/analyze/meal", json=photo))
+        assert set(legacy) == {"items", "summary", "assumptions", "questions"}
+        initial = result(client.post("/v1/analyze/meal", json={**photo, "confirmationFlow": True}))
+        assert initial["clarifications"] == [prompt]
+        assert initial["confirmationApplied"] is False
+        assert "初步识别" in seen[-1][0]
+        answers = [{"question": prompt["question"], "answer": "半根"}, {"question": "玉米品种？"}]
+        refined = result(client.post("/v1/analyze/meal", json={**photo, "confirmationFlow": True, "answers": answers}))
+        assert refined["confirmationApplied"] is True
+        assert refined["clarifications"] == [] and refined["questions"] == []
+        assert refined["items"][0]["estimatedKcal"] == 82 and refined["portionBasis"] == "consumed"
+        assert "最终估算" in seen[-1][0]
+        assert '"answer": "半根"' in seen[-1][1] and '"answer": null' in seen[-1][1]
+        assert client.get("/v1/backup").json()["snapshot"] is None
+
+
 @pytest.mark.parametrize("result,reason", [({}, "stop"), (AI_RESULT, "length"), ({**AI_RESULT, "estimatedKcal": -1}, "stop")])
 def test_invalid_model_result_is_not_returned(fixture, result, reason):
     client, _ = fixture(lambda _: reply(result, reason))

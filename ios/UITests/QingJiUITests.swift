@@ -111,8 +111,15 @@ final class QingJiUITests: XCTestCase {
         app.tabBars.buttons["我的"].tap()
         signOut(in: app)
         login("first-user", in: app)
-        let restored = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "1500"), object: app.staticTexts["intake.total"])
-        XCTAssertEqual(XCTWaiter.wait(for: [restored], timeout: 30), .completed)
+        let restored = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label IN %@", ["1500", "1,500"]), object: app.staticTexts["intake.total"])
+        let loaded = XCTWaiter.wait(for: [restored], timeout: 30)
+        if loaded != .completed {
+            capture("历史账号同步诊断")
+            let details = XCTAttachment(string: app.debugDescription)
+            details.lifetime = .keepAlways
+            self.add(details)
+        }
+        XCTAssertEqual(loaded, .completed)
         verifyRepeatedNavigation(in: app)
     }
 

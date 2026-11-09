@@ -55,6 +55,8 @@ if __name__ == "__main__":
             api.state.accounts.create(username, "test-password-only")
         owner = api.state.accounts.login("first-user", "test-password-only")["accountId"]
         now = datetime.now(timezone.utc)
+        local_today = {zone: now.astimezone(ZoneInfo(zone)).date()
+                       for zone in ("UTC", "GMT", "America/Los_Angeles", "Asia/Shanghai")}
         meals, days = [], []
         for offset in range(730):
             date = now - timedelta(days=offset, minutes=5)
@@ -63,8 +65,8 @@ if __name__ == "__main__":
                 meals.append({"id": str(uuid4()), "consumedAt": stamp, "kind": kind,
                     "items": [{"id": str(uuid4()), "name": "历史食物", "kcal": 500.0}],
                     "source": "manual", "createdAt": stamp})
-            for zone in ("UTC", "GMT", "America/Los_Angeles", "Asia/Shanghai"):
-                key = date.astimezone(ZoneInfo(zone)).strftime("%Y-%m-%d")
+            for zone, today in local_today.items():
+                key = (today - timedelta(days=offset)).isoformat()
                 days.append({"id": key + "|" + zone, "day": key, "timeZone": zone,
                     "activeKcal": 350.0, "updatedAt": stamp})
         Storage(api.state.storage.engine, settings.photo_directory, owner).write(BackupWrite.model_validate({

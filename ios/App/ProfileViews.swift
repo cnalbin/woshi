@@ -285,7 +285,7 @@ struct ServiceSettingsView: View {
                     SecureField("密码", text: $password).textContentType(.password)
                         .accessibilityIdentifier("service.password")
                     if registering {
-                        SecureField("确认密码", text: $confirmPassword).textContentType(.newPassword)
+                        SecureField("确认密码", text: $confirmPassword).textContentType(.password)
                             .accessibilityIdentifier("service.confirm")
                     }
                 } header: { Text(registering ? "创建轻记账号" : "登录轻记账号") } footer: {

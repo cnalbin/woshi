@@ -273,12 +273,14 @@ struct ServiceSettingsView: View {
                 }
             } else {
                 Section {
-                    Image("BrandIcon").resizable().frame(width: 64, height: 64)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                    Text("欢迎使用轻记").font(.largeTitle.bold())
-                    Text("创建账号，开始记录每一餐").foregroundStyle(.secondary)
-                    Text(AppBuild.label).font(.caption).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("app.build")
+                    VStack(alignment: .leading, spacing: 10) {
+                        Image("BrandIcon").resizable().frame(width: 64, height: 64)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                        Text("欢迎使用轻记").font(.largeTitle.bold())
+                        Text("创建账号，开始记录每一餐").foregroundStyle(.secondary)
+                        Text(AppBuild.label).font(.caption).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("app.build")
+                    }.padding(.vertical, 8)
                 }.listRowBackground(Color.clear)
                 Section {
                     TextField("https://api.example.com", text: $address)

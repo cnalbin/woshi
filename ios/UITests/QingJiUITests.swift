@@ -122,10 +122,12 @@ final class QingJiUITests: XCTestCase {
         username.tap()
         username.typeText(name)
         let password = app.secureTextFields["service.password"]
+        reveal(password, in: app)
         password.tap()
         password.typeText("test-password-only")
         if registering {
             let confirm = app.secureTextFields["service.confirm"]
+            reveal(confirm, in: app)
             confirm.tap()
             confirm.typeText("test-password-only")
         }

@@ -23,9 +23,10 @@ struct Card<Content: View>: View {
 }
 
 struct PrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.system(size: 16, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 14)
-            .background(Theme.green.opacity(configuration.isPressed ? 0.7 : 1), in: RoundedRectangle(cornerRadius: 14))
+            .background(Theme.green.opacity(!isEnabled ? 0.35 : configuration.isPressed ? 0.7 : 1), in: RoundedRectangle(cornerRadius: 14))
             .foregroundStyle(.white)
     }
 }
@@ -58,12 +59,12 @@ struct AnalysisStatusView: View {
             }
             Text(progress.message).font(.subheadline).foregroundStyle(Theme.green)
                 .accessibilityIdentifier("analysis.progress")
-            Text("显示服务器返回的处理阶段。完成后可查看估算依据；照片结果经你确认后才保存。")
+            Text("份量与用油会影响估算。分析完成后，请核对结果并确认保存。")
                 .font(.caption).foregroundStyle(.secondary)
             if !history.isEmpty {
                 DisclosureGroup("本次处理记录") {
                     ForEach(Array(history.enumerated()), id: \.offset) { _, item in
-                        Label(item.message, systemImage: "checkmark.circle")
+                        Label(item.message, systemImage: item.stage == progress.stage ? "circle.inset.filled" : "checkmark.circle")
                             .font(.caption).foregroundStyle(.secondary).padding(.vertical, 2)
                     }
                 }.font(.caption)

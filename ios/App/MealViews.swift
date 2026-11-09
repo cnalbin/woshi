@@ -86,18 +86,18 @@ struct MealEditor: View {
                     }
                 }
                 if let error { Section { Text(error).foregroundStyle(.red).font(.subheadline) } }
-                Section {
-                    Button(saving ? "正在保存…" : "确认并保存") { save() }.buttonStyle(PrimaryButtonStyle())
-                        .accessibilityIdentifier("meal.save")
-                        .disabled(!valid || saving || store.storageUnavailable)
-                        .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
-                }
                 if existing != nil {
                     Section { Button("删除这条记录", role: .destructive) { deleteConfirmation = true } }
                 }
             }
             .scrollContentBackground(.hidden).background(Theme.background)
             .navigationTitle(existing == nil ? "确认这餐" : "编辑记录").navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                Button(saving ? "正在保存…" : "确认并保存") { save() }.buttonStyle(PrimaryButtonStyle())
+                    .accessibilityIdentifier("meal.save")
+                    .disabled(!valid || saving || store.storageUnavailable)
+                    .padding(.horizontal, 18).padding(.vertical, 10).background(Theme.background)
+            }
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
             .onAppear { initialize() }
             .task {

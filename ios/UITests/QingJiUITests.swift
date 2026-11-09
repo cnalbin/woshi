@@ -50,6 +50,7 @@ final class QingJiUITests: XCTestCase {
         XCTAssertTrue(manual.waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["intake.total"].label, "125", "Record must survive a real process restart")
         app.tabBars.buttons["我的"].tap()
+        XCTAssertTrue(app.staticTexts["app.build"].waitForExistence(timeout: 5))
         capture("05-我的")
         let metabolism = app.buttons["metabolism.open"]
         reveal(metabolism, in: app)

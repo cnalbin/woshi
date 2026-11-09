@@ -160,12 +160,13 @@ private struct EnergyChart: View {
         GeometryReader { geometry in
             Canvas { context, size in
                 let width = max(1, size.width - 34)
-                let height = max(1, size.height - 30)
+                let top = 8.0
+                let height = max(1, size.height - 38)
                 let maximum = buckets.flatMap { [$0.intake ?? 0, (activityOnly ? $0.activity : $0.total) ?? 0] }.max() ?? 0
                 let step = maximum > 1000 ? 500.0 : maximum > 200 ? 100.0 : 50.0
                 let ceiling = max(step * 4, ceil(maximum / step) * step)
                 for tick in 0...4 {
-                    let y = height * (1 - Double(tick) / 4)
+                    let y = top + height * (1 - Double(tick) / 4)
                     var line = Path(); line.move(to: CGPoint(x: 0, y: y)); line.addLine(to: CGPoint(x: width, y: y))
                     context.stroke(line, with: .color(.secondary.opacity(0.13)), lineWidth: 0.7)
                     context.draw(Text("\(Int(ceiling * Double(tick) / 4))").font(.system(size: 10)).foregroundColor(.secondary),
@@ -176,7 +177,7 @@ private struct EnergyChart: View {
                 for bucket in buckets {
                     let x = (Double(bucket.slot) + 0.5) * slot
                     if selectedSlot == bucket.slot {
-                        context.fill(Path(roundedRect: CGRect(x: x - slot / 2, y: 0, width: slot, height: height), cornerRadius: 4),
+                        context.fill(Path(roundedRect: CGRect(x: x - slot / 2, y: top, width: slot, height: height), cornerRadius: 4),
                                      with: .color(Theme.softGreen))
                     }
                     let values: [(Double?, Color, Double)] = [(bucket.intake, Theme.green, -barWidth - 1),
@@ -184,14 +185,14 @@ private struct EnergyChart: View {
                     for (value, color, offset) in values {
                         if let value, value > 0 {
                             let h = max(1, height * min(1, value / ceiling))
-                            let rect = CGRect(x: x + offset, y: height - h, width: barWidth, height: h)
+                            let rect = CGRect(x: x + offset, y: top + height - h, width: barWidth, height: h)
                             context.fill(Path(roundedRect: rect, cornerRadius: min(3, barWidth / 2)), with: .color(color))
                         }
                     }
                     let stride = buckets.count <= 12 ? (buckets.count == 12 ? 2 : 1) : 5
                     if bucket.slot % stride == 0 || bucket.slot == buckets.count - 1 {
                         context.draw(Text(bucket.label).font(.system(size: 10)).foregroundColor(.secondary),
-                                     at: CGPoint(x: x, y: height + 17))
+                                     at: CGPoint(x: x, y: top + height + 17))
                     }
                 }
             }.contentShape(Rectangle()).gesture(SpatialTapGesture().onEnded { event in

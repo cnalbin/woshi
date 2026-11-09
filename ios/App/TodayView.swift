@@ -17,7 +17,7 @@ struct TodayView: View {
         let intake = meals.reduce(0) { $0 + $1.totalKcal }
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 14) {
+                LazyVStack(spacing: 12) {
                     dateNavigation
                     intakeCard(intake)
                     if let profile = store.snapshot.profile {
@@ -85,10 +85,10 @@ struct TodayView: View {
     private func intakeCard(_ intake: Double) -> some View {
         Card {
             HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text("今日摄入").font(.subheadline.weight(.semibold))
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text("\(Int(intake.rounded()))").font(.system(size: 38, weight: .bold, design: .rounded))
+                        Text("\(Int(intake.rounded()))").font(.system(size: 35, weight: .bold, design: .rounded))
                             .minimumScaleFactor(0.6).monospacedDigit().accessibilityIdentifier("intake.total")
                         Text("kcal").font(.caption).foregroundStyle(.secondary)
                     }
@@ -135,7 +135,9 @@ struct TodayView: View {
                         .font(.caption2).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 4)
-                if health.refreshing { ProgressView() }
+                if !health.hasRequested {
+                    Button("连接") { Task { await health.connect() } }.font(.caption.weight(.semibold))
+                } else if health.refreshing { ProgressView() }
                 else {
                     VStack(alignment: .trailing, spacing: 3) {
                         Text(energy.map { "\(Int($0.rounded()))" } ?? "—").font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
@@ -143,9 +145,7 @@ struct TodayView: View {
                     }
                 }
             }
-            if !health.hasRequested {
-                Button("连接苹果健康") { Task { await health.connect() } }.font(.caption.weight(.semibold))
-            } else if energy == nil {
+            if health.hasRequested && energy == nil {
                 Text(health.message).font(.caption2).foregroundStyle(.secondary)
             }
         }
@@ -190,7 +190,12 @@ struct MetabolismCard: View {
     private var current: MetabolismAssessment? { assessment.flatMap { $0.matches(profile) ? $0 : nil } }
     var body: some View {
         Card {
-            HStack { Text("静息代谢估算").font(.headline); Spacer(); Button(action: action) { Image(systemName: "info.circle") }.accessibilityLabel("查看代谢估算依据") }
+            HStack {
+                Text("静息代谢估算").font(.subheadline.weight(.semibold))
+                Text("kcal/天").font(.caption2).foregroundStyle(.secondary)
+                Spacer()
+                Button(action: action) { Image(systemName: "info.circle") }.accessibilityLabel("查看代谢估算依据")
+            }
             HStack {
                 value("公式估算", profile.formulaKcal)
                 Spacer()
@@ -202,19 +207,18 @@ struct MetabolismCard: View {
                 Text("综合代谢").font(.subheadline.weight(.semibold))
                 Spacer()
                 Text("≈ \(Int(Metabolism.combined(profile: profile, assessment: current).rounded()))")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
                 Text("kcal/天").font(.caption)
-            }.foregroundStyle(Theme.green).padding(12).background(Theme.softGreen, in: RoundedRectangle(cornerRadius: 12))
-            Text(current == nil ? "AI 尚未分析，综合值暂用公式估算。" : (current!.canBlend(with: profile) ? "公式 80% + AI 20% · 产品参考规则，未经临床验证" : "两者差异较大，综合值暂用公式，请核对资料。"))
+            }.foregroundStyle(Theme.green).padding(10).background(Theme.softGreen, in: RoundedRectangle(cornerRadius: 12))
+            Text(current == nil ? "AI 尚未分析，暂用公式估算。" : (current!.canBlend(with: profile) ? "公式 80% + AI 20% · 产品参考估算" : "两者差异较大，暂用公式，请核对资料。"))
                 .font(.caption2).foregroundStyle(.secondary)
         }
     }
     private func value(_ label: String, _ number: Double?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label).font(.caption).foregroundStyle(.secondary)
-            if let number { Text(number, format: .number.precision(.fractionLength(0))).font(.title2.bold()).monospacedDigit() }
+            if let number { Text(number, format: .number.precision(.fractionLength(0))).font(.system(size: 21, weight: .semibold, design: .rounded)).monospacedDigit() }
             else { Text("待分析").font(.title3).foregroundStyle(.secondary) }
-            Text("kcal/天").font(.caption2).foregroundStyle(.secondary)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }

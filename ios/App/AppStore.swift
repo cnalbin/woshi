@@ -45,7 +45,7 @@ final class AppStore: ObservableObject {
                 cloudEnabled = !workspaceID.isEmpty && state.enabled
                 cloudLastSynced = state.lastSynced
                 canUndoRestore = state.lastRestoreFolder != nil
-                cloudMessage = cloudEnabled ? "本机修改将在前台自动备份到 NAS" : "NAS 自动备份已关闭"
+                cloudMessage = "等待与服务器同步"
             }
         } catch {
             storageUnavailable = true

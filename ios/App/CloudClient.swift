@@ -27,7 +27,7 @@ enum CloudError: LocalizedError {
     case conflict, message(String)
     var errorDescription: String? {
         switch self {
-        case .conflict: return "NAS 已有更新数据，本机记录已保留，未覆盖 NAS。请先查看并恢复 NAS 备份。"
+        case .conflict: return "服务器已有更新，本机记录已保留。请重试同步。"
         case .message(let text): return text
         }
     }

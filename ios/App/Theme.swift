@@ -67,8 +67,8 @@ struct AIConsentView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     Image(systemName: "sparkles").font(.system(size: 44)).foregroundStyle(Theme.green)
                     Text("使用 AI 前，请了解").font(.largeTitle.bold())
-                    Text("拍照分析会将本次食物照片和补充说明，通过你配置的后端发送给 DeepSeek。代谢分析仅发送年龄、性别、身高和体重。不会发送苹果健康活动数据或历史饮食。")
-                    Text("仅在你主动点击分析时发送给 DeepSeek。你可以在 NAS 备份设置中另行启用私人备份。模型服务商的处理与保留政策以其条款为准。")
+                    Text("拍照分析会将本次食物照片和补充说明，通过所连接的服务器发送给你配置的模型服务。代谢分析仅发送年龄、性别、身高和体重。不会发送苹果健康活动数据或历史饮食。")
+                    Text("仅在你主动点击分析时发送给模型服务。账号数据自动同步到所连接的服务器。模型服务商的处理与保留政策以其条款为准。")
                     Text("AI 结果是估算，不能精确测量份量、油脂或代谢。保存前请核对食物、份量与热量。")
                     Link("查看 DeepSeek 隐私政策", destination: URL(string: "https://cdn.deepseek.com/policies/zh-CN/deepseek-privacy-policy.html")!)
                     Button("同意并继续") { accept(); dismiss() }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("ai.consent.accept")

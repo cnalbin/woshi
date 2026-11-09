@@ -199,6 +199,7 @@ struct SettingsView: View {
                 }
                 Section("连接") {
                     NavigationLink { ModelSettingsView() } label: { Label("AI 模型设置", systemImage: "sparkles") }
+                        .accessibilityIdentifier("model.open")
                     Text(store.cloudMessage).font(.caption).foregroundStyle(.secondary)
                     NavigationLink { ServiceSettingsView(store: store) } label: {
                         Label(session.record.map { "NAS 账号 · \($0.username)" } ?? "登录 NAS 账号", systemImage: "person.crop.circle")
@@ -209,7 +210,7 @@ struct SettingsView: View {
                     Button { Task { await health.connect() } } label: {
                         HStack { Label("苹果健康", systemImage: "heart"); Spacer(); Text(health.hasRequested ? "检查连接" : "连接").foregroundStyle(.secondary) }
                     }
-                    Text("读取每日活动能量。开启 NAS 备份后保存每日汇总，AI 分析不会收到运动数据。")
+                    Text("读取每日活动能量，每日汇总随当前账号自动同步。AI 分析不会收到运动数据。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if store.snapshot.profile == nil {
@@ -224,7 +225,7 @@ struct SettingsView: View {
                         Button("了解并启用 AI 分析") { showConsent = true }
                     }
                     NavigationLink("隐私与使用说明") { PrivacyView() }
-                    Text("本机支持离线记录。启用 NAS 备份后，可以在换机时恢复。")
+                    Text("本机支持离线记录，联网后自动同步。换机登录同一服务器的相同账号，即可同步已有记录。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section { Text("轻记 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "") · 热量与代谢为估算值").font(.caption).foregroundStyle(.secondary) }
@@ -266,7 +267,7 @@ struct ServiceSettingsView: View {
                 if store?.canImportLegacy == true {
                     Section {
                         Button("导入此手机的旧记录") { confirmImport = true }
-                    } footer: { Text("如果旧记录只存在这部手机，可将资料、饮食和照片复制到当前账号。已有 NAS 备份时，可以选择从 NAS 恢复。") }
+                    } footer: { Text("如果旧记录只存在这部手机，可将资料、饮食和照片复制到当前账号，再自动同步到服务器。") }
                 }
             } else {
                 Section {
@@ -282,10 +283,14 @@ struct ServiceSettingsView: View {
                     TextField("用户名", text: $username)
                         .textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
                         .accessibilityIdentifier("service.username")
-                    SecureField("密码", text: $password).textContentType(.password)
+                    // Registration uses manual secure entry to avoid the system's strong-password
+                    // overlay swallowing edits in paired SwiftUI SecureFields. Login keeps AutoFill.
+                    SecureField("密码", text: $password).textContentType(registering ? .oneTimeCode : .password)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
                         .accessibilityIdentifier("service.password")
                     if registering {
-                        SecureField("确认密码", text: $confirmPassword).textContentType(.password)
+                        SecureField("确认密码", text: $confirmPassword).textContentType(.oneTimeCode)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .accessibilityIdentifier("service.confirm")
                     }
                 } header: { Text(registering ? "创建轻记账号" : "登录轻记账号") } footer: {
@@ -337,10 +342,10 @@ struct PrivacyView: View {
     var body: some View {
         List {
             Section("本机数据") {
-                Text("本机文件按账号隔离，登录凭证保存在钥匙串。你可以选择把个人资料、饮食、照片、代谢结果和活动汇总备份到自己的 NAS 账号。")
+                Text("本机文件按账号隔离，登录凭证保存在钥匙串。个人资料、饮食、照片、代谢结果和活动汇总随当前账号自动同步到所连接的服务器。")
             }
             Section("AI 上传") {
-                Text("只有主动发起 AI 分析时，DeepSeek 才收到本餐照片与补充说明，或年龄、性别、身高、体重。NAS 备份与 AI 分析分别授权。DeepSeek 的处理方式以其政策为准。")
+                Text("只有主动发起 AI 分析时，所配置的模型服务才收到本餐照片与补充说明，或年龄、性别、身高、体重。AI 分析需要单独授权。请了解所选服务的隐私政策。")
                 Link("DeepSeek 隐私政策", destination: URL(string: "https://cdn.deepseek.com/policies/zh-CN/deepseek-privacy-policy.html")!)
             }
             Section("估算边界") {

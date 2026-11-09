@@ -224,3 +224,69 @@ def test_registration_and_private_ai_settings(fixture):
         other = client.post("/v1/auth/register", json={**credentials, "username": "another"}).json()
         other_headers = {"Authorization": "Bearer " + other["token"]}
         assert not client.get("/v1/ai/settings", headers=other_headers).json()["hasKey"]
+
+
+def test_prompt_drafts_debug_and_private_balance(fixture):
+    calls = []
+
+    def provider(request):
+        payload = json.loads(request.content) if request.method == "POST" else None
+        calls.append((request.url, request.headers["Authorization"], payload))
+        if request.url.path == "/user/balance":
+            return httpx.Response(200, json={"is_available": True, "balance_infos": [
+                {"currency": "CNY", "total_balance": "12.50", "granted_balance": "2.50", "topped_up_balance": "10.00"}
+            ], "private_field": "hidden"})
+        if payload.get("response_format"):
+            return reply(AI_RESULT)
+        return httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": "照片调试完成"}}],
+                                         "usage": {"total_tokens": 21}})
+
+    client, _ = fixture(provider, enable_legacy_token=False)
+    with client:
+        def register(name):
+            value = client.post("/v1/auth/register", json={"username": name, "password": "test-password-only"}).json()
+            return {"Authorization": "Bearer " + value["token"]}
+
+        owner, other = register("prompt-owner"), register("prompt-other")
+        settings = {"baseURL": "https://api.deepseek.com/v1", "apiKey": "owner-private-key",
+                    "textModel": "text", "visionModel": "vision", "mealPrompt": "区分精制米饭和糙米。",
+                    "metabolismPrompt": "明确说明使用的估算方法。"}
+        assert client.put("/v1/ai/settings", headers=owner, json=settings).status_code == 200
+        assert client.put("/v1/ai/settings", headers=owner, json={
+            "baseURL": settings["baseURL"], "textModel": "text", "visionModel": "vision"
+        }).json()["mealPrompt"] == settings["mealPrompt"]
+        assert client.get("/v1/ai/settings", headers=other).json()["metabolismPrompt"] == ""
+        assert client.post("/v1/ai/test", headers=owner).status_code == 200
+        assert settings["metabolismPrompt"] in calls[-1][2]["messages"][0]["content"]
+        assert '"estimatedKcal"' in calls[-1][2]["messages"][0]["content"]
+
+        draft = {**settings, "apiKey": "temporary-key", "visionModel": "draft-vision"}
+        debug = {"configuration": draft, "mode": "free", "prompt": "列出颜色", "text": "检查照片",
+                 "imageBase64": base64.b64encode(PHOTO).decode()}
+        result = client.post("/v1/ai/debug", headers=owner, json=debug)
+        assert result.status_code == 200
+        assert result.json()["output"] == "照片调试完成"
+        assert result.json()["usage"]["total_tokens"] == 21
+        assert calls[-1][1] == "Bearer temporary-key"
+        assert calls[-1][2]["model"] == "draft-vision"
+        assert calls[-1][2]["messages"][0]["content"] == "列出颜色"
+        assert calls[-1][2]["messages"][1]["content"][1]["type"] == "image_url"
+        assert client.get("/v1/ai/settings", headers=owner).json()["visionModel"] == "vision"
+        structured = client.post("/v1/ai/debug", headers=owner,
+                                 json={**debug, "mode": "meal", "prompt": settings["mealPrompt"]})
+        assert structured.json()["formatValid"] is False
+        assert settings["mealPrompt"] in calls[-1][2]["messages"][0]["content"]
+
+        balance = client.post("/v1/ai/balance", headers=owner, json={**settings, "apiKey": ""})
+        assert balance.json() == {"supported": True, "is_available": True, "balance_infos": [
+            {"currency": "CNY", "total_balance": "12.50", "granted_balance": "2.50", "topped_up_balance": "10.00"}
+        ]}
+        assert str(calls[-1][0]) == "https://api.deepseek.com/user/balance"
+        assert calls[-1][1] == "Bearer owner-private-key"
+        count = len(calls)
+        assert client.post("/v1/ai/balance", headers=other, json={**settings, "apiKey": ""}).status_code == 400
+        assert client.post("/v1/ai/balance", headers=owner, json={**settings, "baseURL": "https://api.openai.com/v1"}).json()["supported"] is False
+        assert client.post("/v1/ai/debug", headers=owner,
+                           json={**debug, "configuration": {**draft, "baseURL": "https://127.0.0.1"}}).status_code == 400
+        assert len(calls) == count
+        assert client.put("/v1/ai/settings", headers=owner, json={**settings, "mealPrompt": ""}).json()["mealPrompt"] == ""

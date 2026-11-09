@@ -8,7 +8,7 @@ final class QingJiUITests: XCTestCase {
                                 "-serviceURL", "http://localhost:8787", "-uiTestPhoto"]
         app.launch()
         XCTAssertTrue(app.staticTexts["app.build"].waitForExistence(timeout: 8))
-        XCTAssertEqual(app.staticTexts["app.build"].label, "版本 0.5.0 · 构建 7")
+        XCTAssertEqual(app.staticTexts["app.build"].label, "版本 0.6.0 · 构建 8")
         capture("00-注册与版本信息")
         login("registered-user", registering: true, in: app)
         let profile = app.buttons["profile.open"]
@@ -87,6 +87,17 @@ final class QingJiUITests: XCTestCase {
         XCTAssertTrue(app.buttons["保存配置"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.textFields["照片识别模型"].exists)
         capture("09-AI模型设置")
+        let debug = app.buttons["model.debug"]
+        reveal(debug, in: app)
+        debug.tap()
+        XCTAssertTrue(app.navigationBars["调试模型"].waitForExistence(timeout: 5))
+        let metabolismMode = app.segmentedControls.buttons["代谢"]
+        XCTAssertTrue(metabolismMode.waitForExistence(timeout: 5))
+        metabolismMode.tap()
+        app.buttons["填入示例资料"].tap()
+        XCTAssertTrue(app.buttons["debug.run"].isEnabled)
+        capture("09b-模型调试")
+        app.navigationBars.buttons.firstMatch.tap()
         app.navigationBars.buttons.firstMatch.tap()
         let backup = app.buttons["backup.open"]
         reveal(backup, in: app)

@@ -56,14 +56,15 @@ struct CloudClient {
     }
 
     func request(_ path: String, method: String, data: Data? = nil,
-                         contentType: String = "application/json", maximum: Int = 24_000_000) async throws -> Data {
+                         contentType: String = "application/json", maximum: Int = 24_000_000,
+                         timeout: TimeInterval = 90) async throws -> Data {
         guard configuration.isValid, let base = URL(string: configuration.baseURL) else {
             throw CloudError.message("请先登录 NAS 账号。")
         }
         var request = URLRequest(url: base.appendingPathComponent(path))
         request.httpMethod = method
         request.httpBody = data
-        request.timeoutInterval = 90
+        request.timeoutInterval = timeout
         request.setValue("Bearer \(configuration.token)", forHTTPHeaderField: "Authorization")
         if data != nil { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
         let session = URLSession(configuration: .ephemeral, delegate: DirectServiceRequest(), delegateQueue: nil)

@@ -138,3 +138,25 @@ class AISettings(Model):
     textModel: str = Field(default="", max_length=120)
     visionModel: str = Field(default="", max_length=120)
     apiKey: SecretStr = Field(default=SecretStr(""), max_length=500)
+    mealPrompt: str | None = Field(default=None, max_length=6000)
+    metabolismPrompt: str | None = Field(default=None, max_length=6000)
+
+
+class AIDebugInput(Model):
+    configuration: AISettings
+    mode: Literal["free", "meal", "metabolism"]
+    prompt: str = Field(default="", max_length=6000)
+    text: str = Field(default="", max_length=4000)
+    imageBase64: str | None = Field(default=None, min_length=16, max_length=5_400_000)
+
+
+class BalanceAmount(BaseModel):
+    currency: Literal["CNY", "USD"]
+    total_balance: str = Field(pattern=r"^-?\d{1,18}(\.\d{1,8})?$")
+    granted_balance: str = Field(pattern=r"^-?\d{1,18}(\.\d{1,8})?$")
+    topped_up_balance: str = Field(pattern=r"^-?\d{1,18}(\.\d{1,8})?$")
+
+
+class DeepSeekBalance(BaseModel):
+    is_available: StrictBool
+    balance_infos: list[BalanceAmount] = Field(max_length=8)

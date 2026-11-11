@@ -12,7 +12,8 @@ enum AppSkin: String, CaseIterable, Identifiable, Codable {
     }
     var accent: Color {
         switch self {
-        case .classic: Theme.green
+        case .classic: adaptive(light: UIColor(red: 0.035, green: 0.34, blue: 0.19, alpha: 1),
+                                dark: UIColor(red: 0.43, green: 0.82, blue: 0.60, alpha: 1))
         case .orange: adaptive(light: UIColor(red: 0.65, green: 0.29, blue: 0.15, alpha: 1),
                                dark: UIColor(red: 1, green: 0.55, blue: 0.37, alpha: 1))
         case .blue: adaptive(light: UIColor(red: 0.19, green: 0.34, blue: 0.50, alpha: 1),
@@ -29,6 +30,13 @@ enum AppSkin: String, CaseIterable, Identifiable, Codable {
         }
     }
     var softAccent: Color { accent.opacity(0.08) }
+    var buttonFill: Color {
+        switch self {
+        case .classic: Theme.green
+        case .orange: Color(red: 0.60, green: 0.27, blue: 0.12)
+        case .blue: Color(red: 0.13, green: 0.31, blue: 0.48)
+        }
+    }
     private func adaptive(light: UIColor, dark: UIColor) -> Color {
         Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? dark : light })
     }
@@ -72,6 +80,8 @@ struct AppearanceView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 13) {
+                Text("外观").font(.largeTitle.bold()).foregroundStyle(skin.accent)
+                    .frame(maxWidth: .infinity, alignment: .leading).accessibilityAddTraits(.isHeader)
                 ForEach(AppSkin.allCases) { theme in
                     NavigationLink {
                         SkinPreviewView(theme: theme)
@@ -92,12 +102,14 @@ struct AppearanceView: View {
                                 Image(systemName: "checkmark.circle.fill").foregroundStyle(theme.accent)
                             } else {
                                 Text("预览").font(.caption.weight(.semibold)).foregroundStyle(theme.accent)
-                                    .padding(8).background(theme.softAccent, in: Capsule())
+                                    .padding(.horizontal, 13).padding(.vertical, 6)
+                                    .overlay(Capsule().stroke(theme.accent, lineWidth: 1))
                             }
                         }.padding(12)
                             .background(Theme.card, in: RoundedRectangle(cornerRadius: 16))
                             .overlay(RoundedRectangle(cornerRadius: 16).stroke(theme.accent.opacity(0.24), lineWidth: 1))
                     }.buttonStyle(.plain)
+                        .accessibilityIdentifier("skin.\(theme.rawValue)")
                 }
                 Card {
                     Picker(selection: $mode) {
@@ -105,20 +117,33 @@ struct AppearanceView: View {
                     } label: { Label("显示模式", systemImage: "moon") }
                 }.padding(.top, 8)
             }.padding(18)
-        }.background(skin.background).navigationTitle("外观").navigationBarTitleDisplayMode(.inline)
+        }.background(skin.background).brandedNavigation(title: "外观")
             .task { await membership.refresh() }
     }
 
     private func thumbnail(_ theme: AppSkin) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("今日").font(.system(size: 10, weight: .bold))
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("今日").font(.system(size: 12, weight: .bold))
+                    Text("11月11日").font(.system(size: 8))
+                }
+                Spacer()
+                Image(systemName: "bowl.fill").foregroundStyle(theme.accent).font(.caption)
+            }
             HStack(spacing: 7) {
-                Text("1,320").font(.system(size: 12, weight: .bold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("今日摄入").font(.system(size: 8))
+                    Text("1,320").font(.system(size: 12, weight: .bold))
+                    Text("目标 1,800 kcal").font(.system(size: 7))
+                }
                 Circle().trim(from: 0, to: 0.73).stroke(theme.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                     .rotationEffect(.degrees(-90)).frame(width: 23, height: 23)
             }.padding(6).background(Theme.card, in: RoundedRectangle(cornerRadius: 7))
-            Capsule().fill(theme.accent).frame(height: 5)
-        }.padding(8).frame(width: 92, height: 88).background(theme.background, in: RoundedRectangle(cornerRadius: 12))
+            Label("活动消耗 · 380 kcal", systemImage: "figure.run").font(.system(size: 8, weight: .semibold))
+                .padding(4).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.card, in: RoundedRectangle(cornerRadius: 5))
+        }.padding(8).frame(width: 118, height: 119).background(theme.background, in: RoundedRectangle(cornerRadius: 12))
             .accessibilityHidden(true)
     }
 }
@@ -134,9 +159,14 @@ private struct SkinPreviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 13) {
-                Text(theme.name).font(.caption.weight(.semibold)).foregroundStyle(theme.accent)
-                Text("今日").font(.largeTitle.bold())
-                Text("11月11日").foregroundStyle(.secondary)
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("今日").font(.largeTitle.bold())
+                        Text("11月11日").foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: "bowl.fill").font(.largeTitle).foregroundStyle(theme.accent)
+                }.padding(.horizontal, 7)
                 Card {
                     HStack {
                         VStack(alignment: .leading, spacing: 5) {
@@ -149,20 +179,20 @@ private struct SkinPreviewView: View {
                             Circle().stroke(theme.softAccent, lineWidth: 8)
                             Circle().trim(from: 0, to: 0.73).stroke(theme.accent, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                                 .rotationEffect(.degrees(-90))
-                        }.frame(width: 65, height: 65).accessibilityHidden(true)
+                        }.frame(width: 88, height: 88).accessibilityHidden(true)
                     }
                 }
                 Card { LabeledContent { Text("380 kcal") } label: { Label("活动消耗", systemImage: "figure.run").foregroundStyle(theme.accent) } }
                 Card {
                     Text("今日饮食").font(.headline)
-                    meal("早餐", "酸奶和水果", "420 kcal", "cup.and.saucer")
+                    meal("早餐", "酸奶", "240 kcal", "ThemeYogurt")
                     Divider()
-                    meal("午餐", "鸡肉饭", "900 kcal", "fork.knife")
+                    meal("午餐", "米饭", "520 kcal", "ThemeRice")
                     Label("拍照记餐", systemImage: "camera").frame(maxWidth: .infinity).padding(10)
                         .background(theme.softAccent, in: RoundedRectangle(cornerRadius: 12)).foregroundStyle(theme.accent)
                 }
                 if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
-            }.padding(18)
+            }.padding(12).background(theme.softAccent, in: RoundedRectangle(cornerRadius: 24)).padding(18)
         }.background(theme.background)
             .navigationTitle("皮肤预览").navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
@@ -178,16 +208,17 @@ private struct SkinPreviewView: View {
             .environment(\.appSkin, theme).tint(theme.accent)
     }
 
-    private func meal(_ title: String, _ food: String, _ kcal: String, _ symbol: String) -> some View {
+    private func meal(_ title: String, _ food: String, _ kcal: String, _ asset: String) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol).foregroundStyle(theme.accent).frame(width: 38, height: 38)
-                .background(theme.softAccent, in: RoundedRectangle(cornerRadius: 9))
+            Image(asset).resizable().scaledToFill().frame(width: 52, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 10)).accessibilityHidden(true)
             VStack(alignment: .leading) {
                 Text(title).font(.subheadline.weight(.semibold))
                 Text(food).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
             Text(kcal).font(.subheadline)
+            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary).accessibilityHidden(true)
         }
     }
 

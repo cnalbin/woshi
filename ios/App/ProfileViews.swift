@@ -200,28 +200,23 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 16) {
-                    Card {
-                        HStack(spacing: 13) {
-                            Image("BrandIcon").resizable().frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 15))
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(session.record?.username ?? "轻记").font(.title3.bold())
-                                Text("记下每一餐，看见每一天").font(.caption).foregroundStyle(.secondary)
-                                Text(AppBuild.label).font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("app.build")
-                            }
-                            Spacer()
-                        }
+                    VStack(spacing: 4) {
+                        BrandWordmark(compact: false)
+                        Text(AppBuild.label).font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("app.build")
                     }
                     MembershipCard(active: membership.status?.active == true)
+                    Text("AI 模型").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
                     Card {
-                        Text("AI 模型").font(.caption).foregroundStyle(.secondary)
                         NavigationLink { BuiltInModelView() } label: {
-                            settingsRow("内置 DeepSeek", symbol: "cube", detail: quotaLabel)
+                            settingsRow("内置 DeepSeek", symbol: "fish.fill", detail: quotaLabel, iconColor: .blue)
                         }.accessibilityIdentifier("model.builtin")
                         Divider()
                         NavigationLink { CustomModelEntry() } label: {
                             let member = membership.status?.active == true || membership.status?.enabled == false
-                            settingsRow("自定义模型", symbol: member ? "chevron.left.forwardslash.chevron.right" : "lock",
-                                        detail: membership.status?.model == "custom" ? "当前使用" : member ? "" : "会员专享")
+                            settingsRow("自定义模型", symbol: "chevron.left.forwardslash.chevron.right",
+                                        detail: membership.status?.model == "custom" ? "当前使用" : member ? "" : "会员专享",
+                                        locked: !member)
                         }.accessibilityIdentifier("model.open")
                     }.buttonStyle(.plain)
                     Card {
@@ -234,7 +229,7 @@ struct SettingsView: View {
                         }.accessibilityIdentifier("backup.open")
                         Divider()
                         Button { Task { await health.connect() } } label: {
-                            settingsRow("苹果健康", symbol: "heart", detail: health.hasRequested ? "检查权限" : "连接")
+                            settingsRow("苹果健康", symbol: "heart", detail: health.hasRequested ? "检查权限" : "连接", iconColor: .red)
                         }
                     }.buttonStyle(.plain)
                     Card {
@@ -286,7 +281,7 @@ struct SettingsView: View {
                     Text("记录支持离线保存，联网后随账号同步。\n热量与代谢均为估算值，仅供记录参考。")
                         .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.vertical, 4)
                 }.padding(18)
-            }.background(skin.background).navigationTitle("我的").navigationBarTitleDisplayMode(.inline)
+            }.background(skin.background).navigationTitle("").navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(skin.background, for: .navigationBar)
                 .sheet(isPresented: $editProfile) { ProfileEditor(onboarding: false) }
                 .sheet(isPresented: $metabolism) { MetabolismDetailView() }
@@ -307,12 +302,15 @@ struct SettingsView: View {
             Text(value).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
-    private func settingsRow(_ title: String, symbol: String, detail: String) -> some View {
+    private func settingsRow(_ title: String, symbol: String, detail: String, iconColor: Color? = nil, locked: Bool = false) -> some View {
         HStack(spacing: 11) {
-            Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(skin.accent).frame(width: 25)
-            Text(title).font(.subheadline).foregroundStyle(.primary)
+            Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(iconColor ?? skin.accent).frame(width: 25)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                if !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            }
             Spacer(minLength: 3)
-            Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            if locked { Image(systemName: "lock").font(.caption).foregroundStyle(.secondary) }
             Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
         }.frame(minHeight: 32).contentShape(Rectangle())
     }

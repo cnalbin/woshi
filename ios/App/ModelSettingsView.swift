@@ -22,6 +22,7 @@ struct ModelSettingsView: View {
     @State private var loaded = false
     @State private var saving = false
     @State private var message: String?
+    @State private var showKey = false
 
     private struct Configuration: Decodable {
         let baseURL: String
@@ -37,6 +38,8 @@ struct ModelSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
+                Text("自定义模型").font(.title.bold()).frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityAddTraits(.isHeader)
                 if membership.status?.model == "custom" {
                     HStack {
                         Label("自定义模型已启用", systemImage: "checkmark.circle.fill").font(.subheadline.weight(.semibold))
@@ -52,7 +55,16 @@ struct ModelSettingsView: View {
                         TextField("https://api.deepseek.com", text: $draft.baseURL).keyboardType(.URL)
                     }
                     field("API Key") {
-                        SecureField(hasKey && sameAddress ? "•••••••• · 已保存" : "输入个人 API Key", text: $draft.apiKey)
+                        HStack {
+                            if showKey {
+                                TextField(keyPlaceholder, text: $draft.apiKey)
+                            } else {
+                                SecureField(keyPlaceholder, text: $draft.apiKey)
+                            }
+                            Button { showKey.toggle() } label: {
+                                Image(systemName: showKey ? "eye.slash" : "eye").foregroundStyle(.secondary)
+                            }.accessibilityLabel(showKey ? "隐藏正在输入的 API Key" : "显示正在输入的 API Key")
+                        }
                     }
                     field("文字模型") { TextField("文字分析模型", text: $draft.textModel) }
                     field("图片模型") { TextField("照片识别模型", text: $draft.visionModel) }
@@ -79,7 +91,7 @@ struct ModelSettingsView: View {
                 if let message { Text(message).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled) }
                 if !loaded && !loading { Button("重新读取设置") { Task { await load() } } }
             }.padding(18)
-        }.background(skin.background).navigationTitle("自定义模型").navigationBarTitleDisplayMode(.inline)
+        }.background(skin.background).brandedNavigation(title: "自定义模型")
             .task { if !loaded { await load() } }
             .safeAreaInset(edge: .bottom) {
                 if loaded {
@@ -96,6 +108,8 @@ struct ModelSettingsView: View {
         !draft.visionModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         (!draft.apiKey.isEmpty || (hasKey && sameAddress))
     }
+
+    private var keyPlaceholder: String { hasKey && sameAddress ? "•••••••• · 已保存" : "输入个人 API Key" }
 
     private var sameAddress: Bool {
         draft.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/")) == savedAddress
@@ -179,6 +193,8 @@ private struct PromptEditor: View {
     private var selectedText: Binding<String> { mode == 0 ? $mealText : $metabolismText }
     var body: some View {
         VStack(spacing: 16) {
+            Text("编辑提示词").font(.title.bold()).frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
             Picker("提示词类型", selection: $mode) {
                 Text("拍照识别").tag(0)
                 Text("静息代谢").tag(1)
@@ -192,7 +208,7 @@ private struct PromptEditor: View {
                     .buttonStyle(.bordered)
                 Button(saving ? "正在保存…" : "保存提示词") { Task { await save() } }.buttonStyle(PrimaryButtonStyle())
             }.disabled(saving)
-        }.padding(18).background(skin.background).navigationTitle("编辑提示词").navigationBarTitleDisplayMode(.inline)
+        }.padding(18).background(skin.background).brandedNavigation(title: "编辑提示词")
             .task {
                 mealText = meal.isEmpty ? defaultMeal : meal
                 metabolismText = metabolism.isEmpty ? defaultMetabolism : metabolism
@@ -244,10 +260,15 @@ private struct ModelBalanceView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                Text("查询余额").font(.title.bold()).accessibilityAddTraits(.isHeader)
                 Card {
-                    Label(URLComponents(string: configuration.baseURL)?.host == "api.deepseek.com" ? "DeepSeek" : "模型服务商",
-                          systemImage: "creditcard").font(.headline)
-                    Text("个人 API 账号").font(.subheadline).foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        Image(systemName: "fish.fill").font(.title2).foregroundStyle(.blue)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(URLComponents(string: configuration.baseURL)?.host == "api.deepseek.com" ? "DeepSeek" : "模型服务商").font(.headline)
+                            Text("个人 API 账号").font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
                 }
                 ForEach(response?.balance_infos ?? []) { amount in
                     VStack(alignment: .leading, spacing: 6) {
@@ -269,7 +290,7 @@ private struct ModelBalanceView: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
                 }.buttonStyle(.bordered).disabled(checking)
             }.padding(18)
-        }.background(skin.background).navigationTitle("查询余额").navigationBarTitleDisplayMode(.inline)
+        }.background(skin.background).brandedNavigation(title: "查询余额")
             .task { await refresh() }
     }
 

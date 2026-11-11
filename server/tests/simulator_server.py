@@ -7,6 +7,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 
 import httpx
 import uvicorn
@@ -14,11 +15,17 @@ from sqlalchemy import create_engine
 
 from qingji.app import create_app
 from qingji.config import Settings
-from qingji.schemas import BackupWrite
+from qingji.membership import account_token
+from qingji.ai_settings import ProviderSettings
+from qingji.schemas import AISettings, BackupWrite
 from qingji.storage import Storage
 
 
 async def fake_model(request):
+    if request.url.path == "/user/balance":
+        return httpx.Response(200, json={"is_available": True, "balance_infos": [
+            {"currency": "CNY", "total_balance": "12.50", "topped_up_balance": "10.00", "granted_balance": "2.50"}
+        ]})
     content = json.loads(request.content)["messages"][-1]["content"]
     await asyncio.sleep(5 if isinstance(content, list) else 2.5)
     if isinstance(content, list):
@@ -55,6 +62,14 @@ if __name__ == "__main__":
             api.state.accounts.create(username, "test-password-only")
         owner = api.state.accounts.login("first-user", "test-password-only")["accountId"]
         now = datetime.now(timezone.utc)
+        transaction = SimpleNamespace(productId=settings.apple_subscription_product,
+                                      originalTransactionId="ui-test-subscription", transactionId="ui-test-cycle",
+                                      purchaseDate=int(now.timestamp() * 1000),
+                                      expiresDate=int((now + timedelta(days=30)).timestamp() * 1000),
+                                      appAccountToken=account_token(owner), revocationDate=None)
+        api.state.memberships.apply_transaction(transaction, now.replace(tzinfo=None), owner=owner, renewal=True)
+        ProviderSettings(api.state.storage.engine, settings).save(owner, AISettings(
+            baseURL="https://api.deepseek.com", apiKey="test-user-key", textModel="deepseek-flash", visionModel="deepseek-flash"))
         local_today = {zone: now.astimezone(ZoneInfo(zone)).date()
                        for zone in ("UTC", "GMT", "America/Los_Angeles", "Asia/Shanghai")}
         meals, days = [], []

@@ -52,6 +52,7 @@ final class QingJiUITests: XCTestCase {
         app.tabBars.buttons["我的"].tap()
         XCTAssertTrue(app.staticTexts["app.build"].waitForExistence(timeout: 5))
         capture("05-我的")
+        verifyFreeMembership(in: app)
         let metabolism = app.buttons["metabolism.open"]
         reveal(metabolism, in: app)
         metabolism.tap()
@@ -81,13 +82,8 @@ final class QingJiUITests: XCTestCase {
         app.segmentedControls.buttons["年"].tap()
         capture("08-年趋势")
         app.tabBars.buttons["我的"].tap()
-        let model = app.buttons["model.open"]
-        reveal(model, in: app)
-        model.tap()
-        XCTAssertTrue(app.navigationBars["自定义模型"].waitForExistence(timeout: 5))
-        capture("09-免费账号自定义模型入口")
-        app.navigationBars.buttons.firstMatch.tap()
         let backup = app.buttons["backup.open"]
+        if !backup.isHittable { app.swipeDown() }
         reveal(backup, in: app)
         backup.tap()
         let status = app.staticTexts["sync.status"]
@@ -120,6 +116,85 @@ final class QingJiUITests: XCTestCase {
         }
         XCTAssertEqual(loaded, .completed)
         verifyRepeatedNavigation(in: app)
+        verifyMemberScreens(in: app)
+    }
+
+    private func verifyFreeMembership(in app: XCUIApplication) {
+        let entry = app.buttons["membership.entry"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5))
+        entry.tap()
+        XCTAssertTrue(app.navigationBars["轻记会员"].waitForExistence(timeout: 5))
+        capture("15-开通会员")
+        app.navigationBars.buttons.firstMatch.tap()
+        let builtin = app.buttons["model.builtin"]
+        reveal(builtin, in: app)
+        builtin.tap()
+        XCTAssertTrue(app.staticTexts["免费体验剩余"].waitForExistence(timeout: 8))
+        capture("16-内置 DeepSeek")
+        app.navigationBars.buttons.firstMatch.tap()
+        let custom = app.buttons["model.open"]
+        reveal(custom, in: app)
+        custom.tap()
+        XCTAssertTrue(app.buttons["开通会员使用"].waitForExistence(timeout: 5))
+        capture("17-免费账号自定义模型入口")
+        app.navigationBars.buttons.firstMatch.tap()
+        let appearance = app.buttons["appearance.open"]
+        reveal(appearance, in: app)
+        appearance.tap()
+        XCTAssertTrue(app.buttons["skin.orange"].waitForExistence(timeout: 5))
+        capture("18-外观")
+        reveal(app.buttons["skin.orange"], in: app)
+        app.buttons["skin.orange"].tap()
+        XCTAssertTrue(app.buttons["开通会员使用"].waitForExistence(timeout: 5))
+        capture("19-奶油暖橙预览")
+        app.navigationBars.buttons.firstMatch.tap()
+        app.navigationBars.buttons.firstMatch.tap()
+    }
+
+    private func verifyMemberScreens(in app: XCUIApplication) {
+        app.tabBars.buttons["我的"].tap()
+        let entry = app.buttons["membership.entry"]
+        reveal(entry, in: app)
+        entry.tap()
+        XCTAssertTrue(app.staticTexts["会员有效"].waitForExistence(timeout: 5))
+        capture("20-会员管理")
+        app.navigationBars.buttons.firstMatch.tap()
+        let custom = app.buttons["model.open"]
+        reveal(custom, in: app)
+        custom.tap()
+        XCTAssertTrue(app.buttons["model.save"].waitForExistence(timeout: 8))
+        capture("21-自定义模型")
+        let prompt = app.buttons["编辑提示词"]
+        reveal(prompt, in: app)
+        prompt.tap()
+        XCTAssertTrue(app.segmentedControls.buttons["拍照识别"].waitForExistence(timeout: 5))
+        capture("22-编辑提示词")
+        app.navigationBars.buttons.firstMatch.tap()
+        let debug = app.buttons["model.debug"]
+        reveal(debug, in: app)
+        debug.tap()
+        XCTAssertTrue(app.segmentedControls.buttons["拍照"].waitForExistence(timeout: 5))
+        app.segmentedControls.buttons["拍照"].tap()
+        capture("23-调试模型")
+        app.navigationBars.buttons.firstMatch.tap()
+        let balance = app.buttons["model.balance"]
+        reveal(balance, in: app)
+        balance.tap()
+        XCTAssertTrue(app.staticTexts["¥12.50"].waitForExistence(timeout: 8))
+        capture("24-查询余额")
+        app.navigationBars.buttons.firstMatch.tap()
+        app.navigationBars.buttons.firstMatch.tap()
+        let appearance = app.buttons["appearance.open"]
+        reveal(appearance, in: app)
+        appearance.tap()
+        let blue = app.buttons["skin.blue"]
+        reveal(blue, in: app)
+        blue.tap()
+        let apply = app.buttons["应用皮肤"]
+        XCTAssertTrue(apply.waitForExistence(timeout: 5))
+        capture("25-雾蓝简约预览")
+        apply.tap()
+        XCTAssertTrue(blue.waitForExistence(timeout: 8))
     }
 
     private func verifyPhotoCancellationAndReview(in app: XCUIApplication) {

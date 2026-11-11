@@ -55,80 +55,54 @@ struct ModelDebugView: View {
     private var canRun: Bool {
         !loadingPhoto && (mode == .meal ? usesPhoto : hasText || usesPhoto)
     }
+    private var model: String { mode == .meal || usesPhoto ? configuration.visionModel : configuration.textModel }
 
     var body: some View {
-        Form {
-            Section("调试模式") {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("调试模型").font(.title.bold()).accessibilityAddTraits(.isHeader)
                 Picker("模式", selection: $mode) {
                     ForEach(Mode.allCases) { Text($0.label).tag($0) }
-                }.pickerStyle(.segmented)
-                LabeledContent("本次模型", value: (usesPhoto ? configuration.visionModel : configuration.textModel).isEmpty
-                               ? "待填写" : usesPhoto ? configuration.visionModel : configuration.textModel)
-            }.disabled(running)
-            if mode == .free {
-                Section("本次系统提示词（可选）") {
-                    TextField("输入要测试的系统提示词", text: $freePrompt, axis: .vertical)
-                        .lineLimit(3...8)
-                        .onChange(of: freePrompt) { _, value in
-                            if value.count > 6000 { freePrompt = String(value.prefix(6000)) }
+                }.pickerStyle(.segmented).disabled(running)
+                Card { LabeledContent("模型", value: model.isEmpty ? "待填写" : model) }
+                VStack(alignment: .leading, spacing: 12) {
+                    if mode == .free {
+                        Card {
+                            Text("本次系统提示词（可选）").font(.caption).foregroundStyle(.secondary)
+                            TextField("输入要测试的系统提示词", text: $freePrompt, axis: .vertical)
+                                .lineLimit(3...8)
+                                .onChange(of: freePrompt) { _, value in
+                                    if value.count > 6000 { freePrompt = String(value.prefix(6000)) }
+                                }
                         }
+                    }
+                    if mode != .metabolism { photoInput }
+                    Card {
+                        TextField(mode == .meal ? "补充说明（可选）" : "输入测试文字", text: $text, axis: .vertical)
+                            .lineLimit(3...8).accessibilityIdentifier("debug.text")
+                            .onChange(of: text) { _, value in if value.count > 4000 { text = String(value.prefix(4000)) } }
+                        if mode == .metabolism {
+                            Button("填入示例资料") { text = #"{"sex":"male","age":30,"heightCM":175,"weightKG":70}"# }
+                        }
+                    }
                 }.disabled(running)
-            }
-            Section {
-                TextField(mode == .meal ? "补充说明（可选）" : "输入测试文字", text: $text, axis: .vertical)
-                    .lineLimit(3...8).accessibilityIdentifier("debug.text")
-                    .onChange(of: text) { _, value in if value.count > 4000 { text = String(value.prefix(4000)) } }
-                if mode == .metabolism {
-                    Button("填入示例资料") {
-                        text = #"{"sex":"male","age":30,"heightCM":175,"weightKG":70}"#
-                    }
-                } else {
-                    PhotosPicker(selection: $imageSelection, matching: .images) {
-                        Label(photo == nil ? "上传测试图片" : "更换测试图片", systemImage: "photo")
-                    }
-                    if loadingPhoto { ProgressView("正在准备图片…") }
-                    if let photo, let preview = UIImage(data: photo) {
-                        Image(uiImage: preview).resizable().scaledToFit().frame(maxHeight: 140)
-                        Button("移除图片", role: .destructive) { imageSelection = nil; self.photo = nil; photoError = "" }
-                    }
-                    if !photoError.isEmpty { Text(photoError).font(.footnote).foregroundStyle(.secondary) }
-                }
-            } header: { Text("测试输入") } footer: {
-                Text(mode == .free ? "自由调试接受文字或图片。提交的内容会发送到所选 AI 服务。" :
-                     "使用设置页当前的提示词草稿，并检查结果是否符合正式分析的格式。")
-            }.disabled(running)
-            Section {
                 if running {
-                    TimelineView(.periodic(from: started, by: 1)) { context in
-                        ProgressView("等待模型响应 · \(max(0, Int(context.date.timeIntervalSince(started)))) 秒")
+                    Card {
+                        TimelineView(.periodic(from: started, by: 1)) { context in
+                            ProgressView("等待模型响应 · \(max(0, Int(context.date.timeIntervalSince(started)))) 秒")
+                        }
+                        Button("取消调试", role: .cancel) { task?.cancel() }
                     }
-                    Button("取消调试", role: .cancel) { task?.cancel() }
                 } else {
-                    Button("运行调试") { run() }.disabled(!canRun).accessibilityIdentifier("debug.run")
+                    Button("运行调试") { run() }.buttonStyle(PrimaryButtonStyle()).disabled(!canRun)
+                        .accessibilityIdentifier("debug.run")
                 }
                 if !error.isEmpty { Text(error).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled) }
-            }
-            if let result {
-                Section("模型响应") {
-                    LabeledContent("模型", value: result.model)
-                    LabeledContent("耗时", value: "\(result.durationMs) ms")
-                    if let valid = result.formatValid {
-                        Label(valid ? "通过正式分析格式校验" : "未通过正式分析格式校验",
-                              systemImage: valid ? "checkmark.circle" : "exclamationmark.circle")
-                            .foregroundStyle(valid ? skin.accent : Theme.orange)
-                    }
-                    if let tokens = result.usage["total_tokens"] {
-                        LabeledContent("Tokens", value: "\(tokens)")
-                    }
-                    if let finish = result.finishReason, finish != "stop" {
-                        LabeledContent("结束原因", value: finish)
-                    }
-                    Text(result.output).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
-                        .accessibilityIdentifier("debug.output")
-                }
-            }
-        }.scrollContentBackground(.hidden).background(skin.background)
-            .navigationTitle("调试模型").navigationBarTitleDisplayMode(.inline)
+                if let result { resultCard(result) }
+                Text(mode == .free ? "提交的内容会发送到所选 AI 服务。" : "使用当前提示词并校验正式分析格式。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }.padding(18)
+        }.background(skin.background).brandedNavigation(title: "调试模型")
             .task(id: imageSelection) {
                 guard let imageSelection else { loadingPhoto = false; return }
                 loadingPhoto = true; photo = nil; photoError = ""
@@ -146,6 +120,63 @@ struct ModelDebugView: View {
                 }
             }
             .onDisappear { task?.cancel() }
+    }
+
+    private var photoInput: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                if let photo, let preview = UIImage(data: photo) {
+                    Image(uiImage: preview).resizable().scaledToFill().frame(width: 148, height: 126)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                Spacer()
+                VStack(spacing: 8) {
+                    PhotosPicker(selection: $imageSelection, matching: .images) {
+                        Label(photo == nil ? "上传测试图片" : "更换图片", systemImage: "photo")
+                    }.buttonStyle(.bordered)
+                    if photo != nil {
+                        Button("移除图片", role: .destructive) { imageSelection = nil; photo = nil; photoError = "" }.font(.caption)
+                    }
+                }
+            }
+            if loadingPhoto { ProgressView("正在准备图片…") }
+            if !photoError.isEmpty { Text(photoError).font(.footnote).foregroundStyle(.secondary) }
+        }
+    }
+
+    private func resultCard(_ result: Result) -> some View {
+        Card {
+            HStack {
+                Text("调试结果").font(.headline)
+                Spacer()
+                if let valid = result.formatValid {
+                    Label(valid ? "格式校验通过" : "格式校验失败",
+                          systemImage: valid ? "checkmark.circle.fill" : "exclamationmark.circle")
+                        .font(.caption).foregroundStyle(valid ? skin.accent : Theme.orange)
+                }
+            }
+            if mode == .free || result.formatValid != true {
+                rawOutput(result)
+            } else {
+                if let meal = try? JSONDecoder().decode(MealAnalysis.self, from: Data(result.output.utf8)) {
+                    ForEach(Array(meal.items.enumerated()), id: \.offset) { _, item in
+                        Text("\(item.name) · 约 \(item.estimatedGrams.formatted()) g · \(item.estimatedKcal.formatted()) kcal")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+                DisclosureGroup("查看模型原文") { rawOutput(result) }.font(.subheadline)
+            }
+            HStack {
+                Text("耗时 \((Double(result.durationMs) / 1000).formatted(.number.precision(.fractionLength(0...1)))) 秒")
+                if let tokens = result.usage["total_tokens"] { Text("· \(tokens) Token") }
+                if let finish = result.finishReason, finish != "stop" { Text("· \(finish)") }
+            }.font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func rawOutput(_ result: Result) -> some View {
+        Text(result.output).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
+            .accessibilityIdentifier("debug.output")
     }
 
     private func run() {

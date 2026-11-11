@@ -27,8 +27,28 @@ struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.system(size: 16, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 14)
-            .background(skin.accent.opacity(!isEnabled ? 0.35 : configuration.isPressed ? 0.7 : 1), in: RoundedRectangle(cornerRadius: 14))
+            .background(skin.buttonFill.opacity(!isEnabled ? 0.35 : configuration.isPressed ? 0.7 : 1), in: RoundedRectangle(cornerRadius: 14))
             .foregroundStyle(.white)
+    }
+}
+
+struct BrandWordmark: View {
+    @Environment(\.appSkin) private var skin
+    var compact = true
+
+    var body: some View {
+        HStack(spacing: compact ? 4 : 8) {
+            Image("BrandIcon").resizable().scaledToFit().frame(width: compact ? 32 : 66, height: compact ? 32 : 66)
+                .clipShape(RoundedRectangle(cornerRadius: compact ? 9 : 18))
+            Text("轻记").font(compact ? .headline : .largeTitle.bold())
+        }.foregroundStyle(skin.accent).accessibilityElement(children: .ignore).accessibilityLabel("轻记")
+    }
+}
+
+extension View {
+    func brandedNavigation(title: String) -> some View {
+        navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .principal) { BrandWordmark() } }
     }
 }
 

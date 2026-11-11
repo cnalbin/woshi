@@ -88,7 +88,7 @@ final class MembershipModel: ObservableObject {
     func observeTransactions() async {
         await refresh()
         if status?.purchaseEnabled == true { try? await syncEntitlements() }
-        for await result in Transaction.updates {
+        for await result in StoreKit.Transaction.updates {
             if status?.purchaseEnabled == true { try? await submit(result) }
         }
     }
@@ -102,10 +102,10 @@ final class MembershipModel: ObservableObject {
     }
 
     private func syncEntitlements() async throws {
-        for await result in Transaction.currentEntitlements { try await submit(result) }
+        for await result in StoreKit.Transaction.currentEntitlements { try await submit(result) }
     }
 
-    private func submit(_ result: VerificationResult<Transaction>) async throws {
+    private func submit(_ result: VerificationResult<StoreKit.Transaction>) async throws {
         guard case .verified(let transaction) = result, transaction.productID == status?.productID else { return }
         struct Signed: Encodable { let signedTransaction: String }
         let body = try JSONEncoder().encode(Signed(signedTransaction: result.jwsRepresentation))

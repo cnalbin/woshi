@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum Theme {
     static let green = Color(red: 0.035, green: 0.34, blue: 0.19)
@@ -116,11 +117,46 @@ struct EqualActions: Layout {
     }
 }
 
+struct PageSegments<Value: Equatable>: UIViewRepresentable {
+    @Environment(\.appSkin) private var skin
+    @Environment(\.isEnabled) private var isEnabled
+    @Binding var selection: Value
+    let options: [(String, Value)]
+    var identifier: String? = nil
+
+    func makeUIView(context: Context) -> UISegmentedControl {
+        let control = UISegmentedControl(items: options.map { $0.0 })
+        control.accessibilityIdentifier = identifier
+        control.addTarget(context.coordinator, action: #selector(PageSegmentsCoordinator.changed(_:)), for: .valueChanged)
+        return control
+    }
+
+    func updateUIView(_ control: UISegmentedControl, context: Context) {
+        context.coordinator.onChange = { index in
+            if options.indices.contains(index) { selection = options[index].1 }
+        }
+        control.selectedSegmentIndex = options.firstIndex { $0.1 == selection } ?? UISegmentedControl.noSegment
+        control.isEnabled = isEnabled
+        control.selectedSegmentTintColor = UIColor(skin.buttonFill)
+        control.backgroundColor = UIColor(Theme.card)
+        control.setTitleTextAttributes([.foregroundColor: UIColor.white], for: .selected)
+        control.setTitleTextAttributes([.foregroundColor: UIColor.label], for: .normal)
+    }
+
+    func makeCoordinator() -> PageSegmentsCoordinator { PageSegmentsCoordinator() }
+}
+
+final class PageSegmentsCoordinator: NSObject {
+    var onChange: ((Int) -> Void)?
+    @objc func changed(_ control: UISegmentedControl) { onChange?(control.selectedSegmentIndex) }
+}
+
 struct AnalysisStatusView: View {
     @Environment(\.appSkin) private var skin
     let progress: AnalysisProgress
     let startedAt: Date
     var history: [AnalysisProgress] = []
+    var photoAnalysis = false
     let cancel: () -> Void
     var body: some View {
         Card {
@@ -139,9 +175,9 @@ struct AnalysisStatusView: View {
                 ProgressView().tint(skin.accent)
             }
             VStack(alignment: .leading, spacing: 12) {
-                stage("发送资料", index: 0)
-                stage("识别与估算", index: 1)
-                stage("整理结果", index: 2)
+                stage(photoAnalysis ? "发送照片" : "发送资料", index: 0)
+                stage(photoAnalysis ? "识别食物与份量" : "估算静息代谢", index: 1)
+                stage(photoAnalysis ? "整理热量结果" : "整理结果", index: 2)
             }
             Text(progress.message).font(.subheadline).foregroundStyle(skin.accent)
                 .accessibilityIdentifier("analysis.progress")

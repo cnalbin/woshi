@@ -60,9 +60,8 @@ struct ModelDebugView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Picker("模式", selection: $mode) {
-                    ForEach(Mode.allCases) { Text($0.label).tag($0) }
-                }.pickerStyle(.segmented).disabled(running)
+                PageSegments(selection: $mode, options: Mode.allCases.map { ($0.label, $0) })
+                    .frame(height: 34).accessibilityLabel("调试模式").disabled(running)
                 Card { LabeledContent("模型", value: model.isEmpty ? "待填写" : model) }
                 VStack(alignment: .leading, spacing: 12) {
                     if mode == .free {

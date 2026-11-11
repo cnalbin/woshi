@@ -39,12 +39,12 @@ struct MealEditor: View {
                     Section {
                         Image(uiImage: image).resizable().scaledToFill().frame(height: 190).frame(maxWidth: .infinity).clipped()
                             .listRowInsets(EdgeInsets())
-                    }
+                    }.listRowBackground(Theme.card)
                 }
                 Section {
                     Picker("餐次", selection: $kind) { ForEach(MealKind.allCases) { Text($0.label).tag($0) } }
                     DatePicker("吃饭时间", selection: $consumedAt, in: ...Date())
-                }
+                }.listRowBackground(Theme.card)
                 Section {
                     ForEach(items) { item in
                         Button { editingFood = item } label: {
@@ -63,16 +63,15 @@ struct MealEditor: View {
                     Button { editingFood = FoodItem(name: "", kcal: 0) } label: { Label("添加食物", systemImage: "plus") }
                         .accessibilityIdentifier("food.add")
                         .disabled(items.count >= 30)
-                } header: { Text("食物与热量") }
+                } header: { Text("食物与热量") }.listRowBackground(Theme.card)
                 Section {
-                    Picker("实际吃了", selection: $fraction) {
-                        Text("全部").tag(1.0); Text("1/2").tag(0.5); Text("1/4").tag(0.25)
-                    }.pickerStyle(.segmented)
-                } footer: {
+                    PageSegments(selection: $fraction, options: [("全部", 1), ("1/2", 0.5), ("1/4", 0.25)])
+                        .frame(height: 34).accessibilityLabel("实际吃了")
+                } header: { Text("实际吃了") } footer: {
                     Text(analysis?.portionBasis == "consumed"
                          ? "AI 已按你说明的实际摄入估算。若列表与实际相符，请保留「全部」，避免重复折算。"
                          : "食物列表显示整份，保存时按所选比例折算。已保存记录再次打开时，列表显示上次实际吃下的量。")
-                }
+                }.listRowBackground(Theme.card)
                 Section {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("本次摄入").font(.subheadline.weight(.semibold))
@@ -89,14 +88,14 @@ struct MealEditor: View {
                         ForEach(Array((analysis?.questions ?? []).enumerated()), id: \.offset) { _, value in
                             Label(value, systemImage: "questionmark.circle").font(.subheadline)
                         }
-                    }
+                    }.listRowBackground(Theme.card)
                 }
                 if let error { Section { Text(error).foregroundStyle(.red).font(.subheadline) } }
                 if existing != nil {
                     Section { Button("删除这条记录", role: .destructive) { deleteConfirmation = true } }
                 }
             }
-            .scrollContentBackground(.hidden).background(skin.background)
+            .listStyle(.insetGrouped).listSectionSpacing(12).scrollContentBackground(.hidden).background(skin.background)
             .navigationTitle(existing != nil ? "编辑饮食记录" : analysis == nil ? "手动记餐" : "核对食物与份量").navigationBarTitleDisplayMode(.inline)
             .pageActions {
                 Button(saving ? "正在保存…" : existing == nil ? "确认并保存" : "保存修改") { save() }.buttonStyle(PrimaryButtonStyle())
@@ -284,7 +283,7 @@ struct PhotoMealView: View {
                         }
                         }
                         if running {
-                            AnalysisStatusView(progress: progress, startedAt: started, history: history) { task?.cancel() }
+                            AnalysisStatusView(progress: progress, startedAt: started, history: history, photoAnalysis: true) { task?.cancel() }
                                 .id("photo.status")
                         } else if !pendingQuestions.isEmpty {
                             Card {
@@ -364,7 +363,7 @@ struct PhotoMealView: View {
                 }
                 .task {
                     #if DEBUG
-                    if ProcessInfo.processInfo.arguments.contains("-uiTestPhoto"), let image = UIImage(named: "BrandIcon") {
+                    if ProcessInfo.processInfo.arguments.contains("-uiTestPhoto"), let image = UIImage(named: "ThemeRice") {
                         await setImage(image)
                     }
                     #endif
@@ -416,13 +415,14 @@ struct PhotoMealView: View {
             Label(result.confirmationApplied == true ? "已结合你的确认重新估算" : "估算完成，核对后保存", systemImage: "checkmark.circle.fill")
                 .font(.subheadline.weight(.semibold)).foregroundStyle(skin.accent).accessibilityIdentifier("photo.result")
             HStack(alignment: .firstTextBaseline) {
+                Text("本次估算").font(.subheadline.weight(.semibold))
                 Text("\(Int(result.items.reduce(0) { $0 + $1.estimatedKcal }.rounded()))")
-                    .font(.system(size: 38, weight: .bold, design: .rounded))
+                    .font(.system(size: 33, weight: .bold, design: .rounded)).foregroundStyle(skin.accent)
                 Text("kcal").font(.subheadline).foregroundStyle(.secondary)
                 Spacer()
                 Text("\(result.items.count) 项食物").font(.caption).foregroundStyle(.secondary)
             }
-            ForEach(Array(result.items.prefix(5).enumerated()), id: \.offset) { _, item in
+            ForEach(Array(result.items.enumerated()), id: \.offset) { _, item in
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(item.name).font(.subheadline.weight(.medium))

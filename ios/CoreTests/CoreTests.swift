@@ -18,6 +18,13 @@ final class CoreTests: XCTestCase {
         remote = base
         remote.meals[0].items[0].kcal = 175
         XCTAssertThrowsError(try SnapshotMerge.merge(base: base, local: local, remote: remote))
+        let comparison = try XCTUnwrap(SnapshotMerge.conflictingMeal(base: base, local: local, remote: remote))
+        XCTAssertEqual(comparison.local?.totalKcal, 150)
+        XCTAssertEqual(comparison.remote?.totalKcal, 175)
+        local.meals = []
+        let deletion = try XCTUnwrap(SnapshotMerge.conflictingMeal(base: base, local: local, remote: remote))
+        XCTAssertNil(deletion.local)
+        XCTAssertEqual(deletion.remote?.id, first.id)
     }
     func testLegacySnapshotRestoresWithoutActivityField() throws {
         let legacy = Data(#"{"schemaVersion":1,"meals":[],"aiConsent":true}"#.utf8)

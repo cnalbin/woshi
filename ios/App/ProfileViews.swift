@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ProfileEditor: View {
     @Environment(\.appSkin) private var skin
@@ -41,7 +42,12 @@ struct ProfileEditor: View {
                     }
                 }
                 Card {
-                    Picker("用于公式的性别", selection: $sex) { ForEach(BiologicalSex.allCases) { Text($0.label).tag($0) } }
+                    HStack {
+                        Text("性别")
+                        Spacer()
+                        PageSegments(selection: $sex, options: BiologicalSex.allCases.map { ($0.label, $0) })
+                            .frame(width: 154, height: 34).accessibilityLabel("用于公式的性别")
+                    }
                     Divider()
                     field("年龄", text: $age, unit: "岁", decimal: false)
                     Divider()
@@ -332,6 +338,8 @@ struct ServiceSettingsView: View {
     @State private var confirmImport = false
     @State private var editAddress = false
     @State private var draftAddress = ""
+    @State private var showPassword = false
+    @State private var showConfirmation = false
 
     var body: some View {
         ScrollView {
@@ -372,17 +380,11 @@ struct ServiceSettingsView: View {
                                 .textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
                                 .accessibilityIdentifier("service.username")
                         }
-                        accountField("密码") {
-                            SecureField("请输入密码", text: $password).textContentType(registering ? .oneTimeCode : .password)
-                                .textInputAutocapitalization(.never).autocorrectionDisabled()
-                                .accessibilityIdentifier("service.password")
-                        }
+                        accountPassword("密码", placeholder: "请输入密码", value: $password, visible: $showPassword,
+                                        identifier: "service.password", contentType: registering ? .oneTimeCode : .password)
                         if registering {
-                            accountField("确认密码") {
-                                SecureField("请再次输入密码", text: $confirmPassword).textContentType(.oneTimeCode)
-                                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                                    .accessibilityIdentifier("service.confirm")
-                            }
+                            accountPassword("确认密码", placeholder: "请再次输入密码", value: $confirmPassword, visible: $showConfirmation,
+                                            identifier: "service.confirm", contentType: .oneTimeCode)
                         }
                     }
                     Button {
@@ -416,7 +418,9 @@ struct ServiceSettingsView: View {
                         Button(registering ? "注册并开始" : "登录") { login() }
                             .buttonStyle(PrimaryButtonStyle()).disabled(working || address.isEmpty || username.isEmpty || password.isEmpty || (registering && confirmPassword.isEmpty))
                             .accessibilityIdentifier("service.save")
-                        Button(registering ? "已有账号？登录" : "创建新账号") { registering.toggle(); confirmPassword = ""; error = nil }
+                        Button(registering ? "已有账号？登录" : "创建新账号") {
+                            registering.toggle(); confirmPassword = ""; showPassword = false; showConfirmation = false; error = nil
+                        }
                             .font(.subheadline.weight(.semibold)).frame(minHeight: 44)
                             .accessibilityIdentifier("service.mode").disabled(working)
                     }
@@ -463,6 +467,23 @@ struct ServiceSettingsView: View {
             Text(title).font(.subheadline.weight(.semibold))
             content().font(.subheadline).padding(.horizontal, 11).frame(minHeight: 44)
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.25)))
+        }
+    }
+
+    private func accountPassword(_ title: String, placeholder: String, value: Binding<String>, visible: Binding<Bool>,
+                                 identifier: String, contentType: UITextContentType) -> some View {
+        accountField(title) {
+            HStack {
+                Group {
+                    if visible.wrappedValue { TextField(placeholder, text: value) }
+                    else { SecureField(placeholder, text: value) }
+                }.textContentType(contentType).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .accessibilityIdentifier(identifier)
+                Button { visible.wrappedValue.toggle() } label: {
+                    Image(systemName: visible.wrappedValue ? "eye" : "eye.slash").frame(width: 44, height: 44)
+                }.buttonStyle(.plain).foregroundStyle(.secondary)
+                    .accessibilityLabel(visible.wrappedValue ? "隐藏\(title)" : "显示\(title)")
+            }
         }
     }
 

@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct QingJiApp: App {
     @StateObject private var session = AccountSession()
+    @AppStorage("qingji.appearanceMode") private var appearanceMode: AppearanceMode = .system
     var body: some Scene {
         WindowGroup {
             Group {
@@ -11,7 +12,7 @@ struct QingJiApp: App {
                 } else if let configuration = session.record?.configuration {
                     AccountWorkspace(configuration: configuration).id(configuration.workspaceID)
                 }
-            }.environmentObject(session).tint(Theme.green)
+            }.environmentObject(session).tint(AppSkin.classic.accent).preferredColorScheme(appearanceMode.scheme)
         }
     }
 }
@@ -21,7 +22,6 @@ struct AccountWorkspace: View {
     @StateObject private var health: HealthService
     @StateObject private var membership: MembershipModel
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage("qingji.appearanceMode") private var appearanceMode: AppearanceMode = .system
 
     init(configuration: ServiceConfiguration) {
         let workspace = configuration.workspaceID
@@ -33,7 +33,7 @@ struct AccountWorkspace: View {
     var body: some View {
         let skin = membership.status?.skin ?? .classic
         RootView().environmentObject(store).environmentObject(health).environmentObject(membership)
-            .environment(\.appSkin, skin).tint(skin.accent).preferredColorScheme(appearanceMode.scheme)
+            .environment(\.appSkin, skin).tint(skin.accent)
             .task { await membership.observeTransactions() }
             .task {
                 health.start()

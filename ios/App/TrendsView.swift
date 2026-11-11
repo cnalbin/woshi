@@ -46,9 +46,8 @@ struct TrendsView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 16) {
-                    Picker("范围", selection: $period) {
-                        ForEach(TrendPeriod.allCases) { Text($0.label).tag($0) }
-                    }.pickerStyle(.segmented).accessibilityIdentifier("trends.period")
+                    PageSegments(selection: $period, options: TrendPeriod.allCases.map { ($0.label, $0) }, identifier: "trends.period")
+                        .frame(height: 34)
                     if model.loadedKey == key, let report = model.report { content(report) }
                     else { ProgressView("正在整理记录…").frame(maxWidth: .infinity, minHeight: 300) }
                 }.padding(18)

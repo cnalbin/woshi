@@ -3,6 +3,7 @@ import StoreKit
 
 struct MembershipCard: View {
     @Environment(\.appSkin) private var skin
+    @EnvironmentObject private var membership: MembershipModel
     let active: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -10,7 +11,8 @@ struct MembershipCard: View {
                 Image(systemName: "crown.fill").foregroundStyle(.yellow)
                 Text("轻记会员")
             }.font(.headline)
-            Text("每周期 100 次 AI 分析").font(.subheadline).foregroundStyle(.secondary)
+            Text(active ? membership.status?.renewalDate.map { "会员有效至 \($0)" } ?? "会员有效" : "每周期 100 次 AI 分析")
+                .font(.subheadline).foregroundStyle(.secondary)
             NavigationLink {
                 if active { MembershipManagementView() } else { MembershipPurchaseView() }
             } label: {
@@ -72,22 +74,25 @@ struct MembershipPurchaseView: View {
             }.padding(18)
         }.background(skin.background)
             .navigationTitle("轻记会员").navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden()
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("关闭", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly) } }
             .toolbar(.hidden, for: .tabBar)
             .task { await membership.loadProduct() }
             .onChange(of: membership.status?.active) { _, active in if active == true { dismiss() } }
-            .safeAreaInset(edge: .bottom) {
-                VStack(spacing: 10) {
+            .pageActions {
+                VStack(spacing: 5) {
                     Button(membership.busy ? "正在处理…" : "开通会员") { Task { await membership.purchase() } }
                         .buttonStyle(PrimaryButtonStyle()).disabled(membership.product == nil || membership.busy || membership.status?.active == true)
                     Text(membership.status?.purchaseEnabled == true ? "自动续费 · 可随时取消" : "会员订阅暂未开放")
                         .font(.footnote).foregroundStyle(.secondary)
                     Button("恢复购买") { Task { await membership.restore() } }
-                        .font(.footnote.weight(.semibold)).disabled(membership.status?.purchaseEnabled != true || membership.busy)
+                        .font(.footnote.weight(.semibold)).frame(minHeight: 44)
+                        .disabled(membership.status?.purchaseEnabled != true || membership.busy)
                     HStack(spacing: 14) {
                         Link("订阅条款", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
                         NavigationLink("隐私政策") { PrivacyView() }
-                    }.font(.caption2)
-                }.padding(.horizontal, 18).padding(.vertical, 10).background(skin.background)
+                    }.font(.caption2).frame(minHeight: 44)
+                }
             }
     }
     private func benefit(_ title: String, icon: String) -> some View {
@@ -129,13 +134,13 @@ struct MembershipManagementView: View {
             }.padding(18)
         }.background(skin.background).navigationTitle("会员管理").navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
-            .safeAreaInset(edge: .bottom) {
+            .pageActions {
                 if membership.status?.active == true {
                     VStack(spacing: 10) {
                         Button("管理订阅") { manage = true }.buttonStyle(OutlineButtonStyle())
                         Button("恢复购买") { Task { await membership.restore() } }
                             .buttonStyle(OutlineButtonStyle()).disabled(membership.status?.purchaseEnabled != true || membership.busy)
-                    }.padding(18).background(skin.background)
+                    }
                 }
             }
             .manageSubscriptionsSheet(isPresented: $manage)
@@ -179,6 +184,9 @@ struct BuiltInModelView: View {
     @EnvironmentObject private var membership: MembershipModel
     @Environment(\.appSkin) private var skin
     @State private var error: String?
+    @State private var showPhoto = false
+    @State private var showMetabolism = false
+    @EnvironmentObject private var store: AppStore
     var onManual: (() -> Void)? = nil
     private var exhausted: Bool { membership.status?.remaining == 0 }
     var body: some View {
@@ -208,9 +216,9 @@ struct BuiltInModelView: View {
                         Divider()
                         Label("会员专属皮肤", systemImage: "paintpalette")
                     } else {
-                        Label { Text("拍照识别") } icon: { Image(systemName: "camera").foregroundStyle(skin.accent) }
+                        Button { showPhoto = true } label: { taskRow("拍照识别", icon: "camera") }.buttonStyle(.plain)
                         Divider()
-                        Label { Text("静息代谢") } icon: { Image(systemName: "waveform.path.ecg").foregroundStyle(skin.accent) }
+                        Button { showMetabolism = true } label: { taskRow("静息代谢", icon: "waveform.path.ecg") }.buttonStyle(.plain)
                     }
                 }
                 Label("确认食物信息后重新估算，仍计为一次分析", systemImage: "info.circle")
@@ -232,6 +240,18 @@ struct BuiltInModelView: View {
               }
             }
             .task { await membership.refresh() }
+            .sheet(isPresented: $showPhoto) { PhotoMealView(initialDate: Date()) }
+            .sheet(isPresented: $showMetabolism) {
+                if store.snapshot.profile == nil { ProfileEditor(onboarding: false) }
+                else { MetabolismDetailView() }
+            }
+    }
+    private func taskRow(_ title: String, icon: String) -> some View {
+        HStack {
+            Label { Text(title) } icon: { Image(systemName: icon).foregroundStyle(skin.accent) }
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+        }.frame(minHeight: 44).contentShape(Rectangle())
     }
     private func enable() async {
         do { try await membership.update(model: "builtIn"); error = nil }

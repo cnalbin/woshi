@@ -190,10 +190,8 @@ private struct PromptEditor: View {
     private var selectedText: Binding<String> { mode == 0 ? $mealText : $metabolismText }
     var body: some View {
         VStack(spacing: 16) {
-            Picker("提示词类型", selection: $mode) {
-                Text("拍照识别").tag(0)
-                Text("静息代谢").tag(1)
-            }.pickerStyle(.segmented)
+            PageSegments(selection: $mode, options: [("拍照识别", 0), ("静息代谢", 1)])
+                .frame(height: 34).accessibilityLabel("提示词类型")
             TextEditor(text: selectedText).font(.body).padding(8)
                 .scrollContentBackground(.hidden).background(Theme.card, in: RoundedRectangle(cornerRadius: 14))
                 .accessibilityLabel("提示词")

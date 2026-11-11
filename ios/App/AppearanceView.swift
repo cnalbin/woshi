@@ -168,29 +168,20 @@ private struct SkinPreviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 13) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("今日").font(.largeTitle.bold())
-                        Text("11月11日").foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Image("BrandIcon").resizable().frame(width: 42, height: 42).clipShape(RoundedRectangle(cornerRadius: 12))
-                }.padding(.horizontal, 7)
-                Card {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("今日摄入").font(.subheadline.bold())
-                            Text("1,320 kcal").font(.system(size: 31, weight: .bold, design: .rounded))
-                            Text("目标 1,800 kcal").font(.caption).foregroundStyle(.secondary)
+                VStack(spacing: 16) {
+                    BrandWordmark()
+                    ZStack {
+                        Circle().stroke(theme.accent.opacity(0.16), lineWidth: 10)
+                        Circle().trim(from: 0, to: 0.73).stroke(theme.accent, style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                            .rotationEffect(.degrees(-90)).accessibilityHidden(true)
+                        VStack(spacing: 4) {
+                            Text("今日摄入").font(.caption.weight(.semibold))
+                            Text("1,320").font(.system(size: 34, weight: .bold, design: .rounded)).foregroundStyle(theme.accent)
+                            Text("/ 1,800 kcal").font(.caption).foregroundStyle(.secondary)
                         }
-                        Spacer()
-                        ZStack {
-                            Circle().stroke(theme.softAccent, lineWidth: 8)
-                            Circle().trim(from: 0, to: 0.73).stroke(theme.accent, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                                .rotationEffect(.degrees(-90))
-                        }.frame(width: 88, height: 88).accessibilityHidden(true)
                     }
-                }
+                    .frame(width: 152, height: 152)
+                }.frame(maxWidth: .infinity).padding(.vertical, 12)
                 Card { LabeledContent { Text("380 kcal") } label: { Label("活动消耗", systemImage: "figure.run").foregroundStyle(theme.accent) } }
                 Card {
                     Text("今日饮食").font(.headline)

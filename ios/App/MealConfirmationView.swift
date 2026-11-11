@@ -45,13 +45,12 @@ struct MealConfirmationView: View {
             .background(skin.background)
             .navigationTitle("确认食物信息").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("稍后") { dismiss() } } }
-            .safeAreaInset(edge: .bottom) {
+            .pageActions {
                 Button("确认并继续分析") {
                     onSubmit(answers)
                     dismiss()
                 }.buttonStyle(PrimaryButtonStyle()).disabled(!allAnswered)
                     .accessibilityIdentifier("confirmation.continue")
-                    .padding(.horizontal, 18).padding(.vertical, 10).background(skin.background)
             }
         }
     }
@@ -86,7 +85,8 @@ struct MealConfirmationView: View {
                 Image(systemName: selected ? "largecircle.fill.circle" : "circle").foregroundStyle(skin.accent)
                 Text(title).font(.subheadline).foregroundStyle(.primary)
                 Spacer(minLength: 0)
-            }.padding(11).background(selected ? skin.softAccent : Color.clear, in: RoundedRectangle(cornerRadius: 10))
+            }.padding(.horizontal, 11).frame(minHeight: 44)
+                .background(selected ? skin.softAccent : Color.clear, in: RoundedRectangle(cornerRadius: 10))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
             .accessibilityAddTraits(selected ? .isSelected : [])

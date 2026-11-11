@@ -298,10 +298,13 @@ final class QingJiUITests: XCTestCase {
             XCTAssertEqual(address.value as? String, "http://localhost:8787")
             capture("00b-服务器地址")
             app.buttons["service.address.save"].tap()
+            let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: address)
+            XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 8), .completed)
         } else {
             capture("00c-登录")
         }
         let username = app.textFields["service.username"]
+        reveal(username, in: app)
         username.tap()
         username.typeText(name)
         let password = app.secureTextFields["service.password"]

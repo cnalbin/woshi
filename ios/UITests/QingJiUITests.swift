@@ -297,7 +297,9 @@ final class QingJiUITests: XCTestCase {
             XCTAssertTrue(address.waitForExistence(timeout: 8))
             XCTAssertEqual(address.value as? String, "http://localhost:8787")
             capture("00b-服务器地址")
-            app.buttons["service.address.save"].tap()
+            let saveAddress = app.buttons["service.address.save"]
+            XCTAssertTrue(saveAddress.isEnabled)
+            saveAddress.tap()
             let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: address)
             XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 8), .completed)
         } else {

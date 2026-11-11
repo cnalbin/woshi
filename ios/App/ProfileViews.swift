@@ -337,7 +337,6 @@ struct ServiceSettingsView: View {
     @State private var confirmLogout = false
     @State private var confirmImport = false
     @State private var editAddress = false
-    @State private var draftAddress = ""
     @State private var showPassword = false
     @State private var showConfirmation = false
 
@@ -388,7 +387,6 @@ struct ServiceSettingsView: View {
                         }
                     }
                     Button {
-                        draftAddress = address
                         editAddress = true
                     } label: {
                         Card {
@@ -427,25 +425,8 @@ struct ServiceSettingsView: View {
                 }
             }
             .sheet(isPresented: $editAddress) {
-                NavigationStack {
-                    ScrollView {
-                        Card {
-                            accountField("服务器地址") {
-                                TextField("https://", text: $draftAddress)
-                                    .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                                    .accessibilityIdentifier("service.address")
-                            }
-                        }.padding(Theme.gutter)
-                    }.background(skin.background).navigationTitle("服务器地址").navigationBarTitleDisplayMode(.inline)
-                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { editAddress = false } } }
-                        .pageActions {
-                            Button("保存地址") {
-                                address = draftAddress.trimmingCharacters(in: .whitespacesAndNewlines)
-                                editAddress = false
-                            }.buttonStyle(PrimaryButtonStyle()).disabled(!ServiceConfiguration.validAddress(draftAddress.trimmingCharacters(in: .whitespacesAndNewlines)))
-                                .accessibilityIdentifier("service.address.save")
-                        }
-                }.presentationDetents([.medium, .large])
+                ServiceAddressView(address: address) { address = $0 }
+                    .presentationDetents([.medium, .large])
             }
             .onAppear { if address.isEmpty { address = session.lastAddress } }
             .alert("退出当前账号？", isPresented: $confirmLogout) {
@@ -500,6 +481,40 @@ struct ServiceSettingsView: View {
                 password = ""
                 self.error = error.localizedDescription
             }
+        }
+    }
+}
+
+private struct ServiceAddressView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.appSkin) private var skin
+    @State private var draft: String
+    let save: (String) -> Void
+
+    init(address: String, save: @escaping (String) -> Void) {
+        _draft = State(initialValue: address)
+        self.save = save
+    }
+
+    var body: some View {
+        let clean = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        NavigationStack {
+            ScrollView {
+                Card {
+                    Text("服务器地址").font(.subheadline.weight(.semibold))
+                    TextField("https://", text: $draft)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                        .font(.subheadline).padding(.horizontal, 11).frame(minHeight: 44)
+                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.25)))
+                        .accessibilityIdentifier("service.address")
+                }.padding(Theme.gutter)
+            }.background(skin.background).navigationTitle("服务器地址").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
+                .pageActions {
+                    Button("保存地址") { save(clean); dismiss() }
+                        .buttonStyle(PrimaryButtonStyle()).disabled(!ServiceConfiguration.validAddress(clean))
+                        .accessibilityIdentifier("service.address.save")
+                }
         }
     }
 }

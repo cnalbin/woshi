@@ -80,7 +80,8 @@ extension View {
     }
 
     func pageActions<Actions: View>(@ViewBuilder _ actions: () -> Actions) -> some View {
-        safeAreaInset(edge: .bottom, spacing: 0) { PageActions(content: actions()) }
+        let content = actions()
+        return safeAreaInset(edge: .bottom, spacing: 0) { PageActions(content: content) }
     }
 
     func subpageNavigation(title: String) -> some View {

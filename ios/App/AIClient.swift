@@ -55,7 +55,10 @@ struct ServiceConfiguration {
 
 enum AIError: LocalizedError {
     case message(String)
-    var errorDescription: String? { if case .message(let value) = self { return value }; return nil }
+    case quotaExhausted(String)
+    var errorDescription: String? {
+        switch self { case .message(let value), .quotaExhausted(let value): return value }
+    }
 }
 
 struct AnalysisProgress: Codable, Equatable {
@@ -63,7 +66,11 @@ struct AnalysisProgress: Codable, Equatable {
     var message: String
 }
 
-struct ServiceError: Codable { var code: String; var message: String }
+struct ServiceError: Codable {
+    var code: String
+    var message: String
+    var analysisError: AIError { code == "AI_QUOTA_EXHAUSTED" ? .quotaExhausted(message) : .message(message) }
+}
 
 struct AIClient {
     let configuration: ServiceConfiguration
@@ -114,7 +121,7 @@ struct AIClient {
                     guard body.count < 8192 else { break }
                     body.append(byte)
                 }
-                if let error = try? JSONDecoder().decode(ServiceError.self, from: body) { throw AIError.message(error.message) }
+                if let error = try? JSONDecoder().decode(ServiceError.self, from: body) { throw error.analysisError }
                 throw AIError.message("服务连接失败（\(http.statusCode)），请检查 NAS 地址或重新登录。")
             }
             guard http.value(forHTTPHeaderField: "Content-Type")?.contains("text/event-stream") == true else {
@@ -131,7 +138,7 @@ struct AIClient {
                 case "result": return try JSONDecoder().decode(Output.self, from: frame.data)
                 case "error":
                     let error = try JSONDecoder().decode(ServiceError.self, from: frame.data)
-                    throw AIError.message(error.message)
+                    throw error.analysisError
                 default: break
                 }
             }

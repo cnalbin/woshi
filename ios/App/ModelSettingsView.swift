@@ -38,8 +38,6 @@ struct ModelSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
-                Text("自定义模型").font(.title.bold()).frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityAddTraits(.isHeader)
                 if membership.status?.model == "custom" {
                     HStack {
                         Label("自定义模型已启用", systemImage: "checkmark.circle.fill").font(.subheadline.weight(.semibold))
@@ -91,14 +89,13 @@ struct ModelSettingsView: View {
                 if let message { Text(message).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled) }
                 if !loaded && !loading { Button("重新读取设置") { Task { await load() } } }
             }.padding(18)
-        }.background(skin.background).brandedNavigation(title: "自定义模型")
+        }.background(skin.background).subpageNavigation(title: "自定义模型")
             .task { if !loaded { await load() } }
-            .safeAreaInset(edge: .bottom) {
+            .pageActions {
                 if loaded {
                     Button(saving ? "正在保存…" : "保存并启用") { Task { await save() } }
                         .buttonStyle(PrimaryButtonStyle()).disabled(saving || !valid)
                         .accessibilityIdentifier("model.save")
-                        .padding(.horizontal, 18).padding(.vertical, 10).background(skin.background)
                 }
             }
     }
@@ -193,8 +190,6 @@ private struct PromptEditor: View {
     private var selectedText: Binding<String> { mode == 0 ? $mealText : $metabolismText }
     var body: some View {
         VStack(spacing: 16) {
-            Text("编辑提示词").font(.title.bold()).frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityAddTraits(.isHeader)
             Picker("提示词类型", selection: $mode) {
                 Text("拍照识别").tag(0)
                 Text("静息代谢").tag(1)
@@ -203,12 +198,14 @@ private struct PromptEditor: View {
                 .scrollContentBackground(.hidden).background(Theme.card, in: RoundedRectangle(cornerRadius: 14))
                 .accessibilityLabel("提示词")
             Text(message ?? "结果格式由轻记统一校验").font(.caption).foregroundStyle(.secondary)
-            HStack(spacing: 10) {
+        }.padding(Theme.gutter).background(skin.background).subpageNavigation(title: "编辑提示词")
+            .pageActions {
+              EqualActions {
                 Button("恢复默认") { selectedText.wrappedValue = mode == 0 ? defaultMeal : defaultMetabolism }
                     .buttonStyle(OutlineButtonStyle())
                 Button(saving ? "正在保存…" : "保存提示词") { Task { await save() } }.buttonStyle(PrimaryButtonStyle())
-            }.disabled(saving)
-        }.padding(18).background(skin.background).brandedNavigation(title: "编辑提示词")
+              }.disabled(saving)
+            }
             .task {
                 mealText = meal.isEmpty ? defaultMeal : meal
                 metabolismText = metabolism.isEmpty ? defaultMetabolism : metabolism
@@ -260,7 +257,6 @@ private struct ModelBalanceView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("查询余额").font(.title.bold()).accessibilityAddTraits(.isHeader)
                 Card {
                     HStack(spacing: 12) {
                         Image("DeepSeekIcon").resizable().scaledToFit().frame(width: 30, height: 30)
@@ -285,12 +281,13 @@ private struct ModelBalanceView: View {
                 }
                 if let checkedAt { Text("更新于 \(checkedAt.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
                 if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
+            }.padding(18)
+        }.background(skin.background).subpageNavigation(title: "查询余额")
+            .pageActions {
                 Button { Task { await refresh() } } label: {
                     Label(checking ? "正在查询…" : "刷新余额", systemImage: "arrow.clockwise")
-                        .frame(maxWidth: .infinity).padding(.vertical, 6)
                 }.buttonStyle(OutlineButtonStyle()).disabled(checking)
-            }.padding(18)
-        }.background(skin.background).brandedNavigation(title: "查询余额")
+            }
             .task { await refresh() }
     }
 

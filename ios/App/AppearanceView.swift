@@ -86,8 +86,6 @@ struct AppearanceView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 13) {
-                Text("外观").font(.largeTitle.bold()).foregroundStyle(skin.accent)
-                    .frame(maxWidth: .infinity, alignment: .leading).accessibilityAddTraits(.isHeader)
                 ForEach(AppSkin.allCases) { theme in
                     NavigationLink {
                         SkinPreviewView(theme: theme)
@@ -127,7 +125,7 @@ struct AppearanceView: View {
                     }
                 }.padding(.top, 8)
             }.padding(18)
-        }.background(skin.background).brandedNavigation(title: "外观")
+        }.background(skin.background).subpageNavigation(title: "外观")
             .task { await membership.refresh() }
     }
 
@@ -165,6 +163,7 @@ private struct SkinPreviewView: View {
     @State private var busy = false
     @State private var error: String?
     private var unlocked: Bool { theme == .classic || membership.status?.active == true }
+    private var inUse: Bool { (membership.status?.skin ?? .classic) == theme }
 
     var body: some View {
         ScrollView {
@@ -198,23 +197,25 @@ private struct SkinPreviewView: View {
                     meal("早餐", "酸奶", "240 kcal", "ThemeYogurt")
                     Divider()
                     meal("午餐", "米饭", "520 kcal", "ThemeRice")
-                    Label("拍照记餐", systemImage: "camera").frame(maxWidth: .infinity).padding(10)
-                        .background(theme.softAccent, in: RoundedRectangle(cornerRadius: 12)).foregroundStyle(theme.accent)
+                    EqualActions {
+                        Text("拍照记餐").actionPreview(theme, filled: true)
+                        Text("手动添加").actionPreview(theme, filled: false)
+                    }.accessibilityHidden(true)
                 }
                 if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
             }.padding(12).background(theme.softAccent, in: RoundedRectangle(cornerRadius: 24)).padding(18)
         }.background(theme.background)
             .navigationTitle("皮肤预览").navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
-            .safeAreaInset(edge: .bottom) {
+            .pageActions {
                 Group {
                     if unlocked {
-                        Button(busy ? "正在应用…" : "应用皮肤") { Task { await apply() } }
-                            .buttonStyle(PrimaryButtonStyle()).disabled(busy)
+                        Button(inUse ? "当前使用" : busy ? "正在应用…" : "应用皮肤") { Task { await apply() } }
+                            .buttonStyle(PrimaryButtonStyle()).disabled(busy || inUse)
                     } else {
                         NavigationLink("开通会员使用") { MembershipPurchaseView() }.buttonStyle(PrimaryButtonStyle())
                     }
-                }.padding(18).background(theme.background)
+                }
             }
             .environment(\.appSkin, theme).tint(theme.accent)
     }

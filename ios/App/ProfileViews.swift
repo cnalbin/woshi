@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ProfileEditor: View {
+    @Environment(\.appSkin) private var skin
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var session: AccountSession
     @Environment(\.dismiss) private var dismiss
@@ -21,16 +22,17 @@ struct ProfileEditor: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            ScrollView {
+              VStack(spacing: 14) {
                 if onboarding {
-                    Section {
+                    Card {
                         VStack(alignment: .leading, spacing: 12) {
                             Image("BrandIcon").resizable().frame(width: 76, height: 76).clipShape(RoundedRectangle(cornerRadius: 20))
                             Text("轻记每一餐").font(.largeTitle.bold())
                             Text("先填写基本资料，了解静息代谢，再开始记录。所有信息可随时修改。")
                                 .foregroundStyle(.secondary)
                         }.padding(.vertical, 12)
-                    }.listRowBackground(Color.clear)
+                    }
                     NavigationLink { ServiceSettingsView(store: store) } label: {
                         Label(session.record == nil ? "登录 NAS 账号" : "管理 NAS 账号", systemImage: "person.crop.circle")
                     }.accessibilityIdentifier("service.open")
@@ -38,29 +40,34 @@ struct ProfileEditor: View {
                         NavigationLink { SyncView() } label: { Label("数据同步", systemImage: "icloud") }
                     }
                 }
-                Section {
+                Card {
                     Picker("用于公式的性别", selection: $sex) { ForEach(BiologicalSex.allCases) { Text($0.label).tag($0) } }
+                    Divider()
                     field("年龄", text: $age, unit: "岁", decimal: false)
+                    Divider()
                     field("身高", text: $height, unit: "cm")
+                    Divider()
                     field("体重", text: $weight, unit: "kg")
-                } header: { Text("个人资料") } footer: { Text("本版代谢分析面向 18–100 岁成年用户。公式不包含活动消耗，无法代替实测代谢。") }
-                Section {
+                    Divider()
                     field("每日摄入目标", text: $target, unit: "kcal")
-                } footer: { Text("请填写自己的摄入目标。此项独立于代谢估算，默认值仅用于初始化，不是个性化饮食建议。") }
+                }
                 if let profile {
-                    Section("公式预览") {
-                        LabeledContent("静息代谢估算", value: "\(Int(profile.formulaKcal.rounded())) kcal/天")
+                    Card(surface: skin.membershipBackground) {
+                        Label("公式代谢估算", systemImage: "sum").font(.subheadline.weight(.semibold))
+                        Text("\(Int(profile.formulaKcal.rounded())) kcal/天").font(.title2.bold()).foregroundStyle(skin.accent)
                     }
                 }
+                Text("代谢公式适用于 18–100 岁。每日摄入目标由你单独设置。")
+                    .font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                 if let error { Text(error).foregroundStyle(.red).font(.subheadline) }
-            }
+              }.padding(Theme.gutter)
+            }.background(skin.background).scrollDismissesKeyboard(.interactively)
             .navigationTitle(onboarding ? "欢迎使用轻记" : "编辑资料")
             .navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom) {
+            .pageActions {
                 Button(onboarding ? "保存并开始记录" : "保存资料") { save() }
                     .buttonStyle(PrimaryButtonStyle()).disabled(profile == nil || store.storageUnavailable)
                     .accessibilityIdentifier("profile.save")
-                    .padding(.horizontal, 20).padding(.vertical, 12).background(.bar)
             }
             .toolbar {
                 if !onboarding { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
@@ -103,17 +110,16 @@ struct MetabolismDetailView: View {
     @State private var history: [AnalysisProgress] = []
     @State private var cancelled = false
     @State private var showModel = false
+    @State private var editProfile = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if let profile = store.snapshot.profile {
-                        MetabolismCard(profile: profile, assessment: store.snapshot.metabolism) {}
+                        MetabolismCard(profile: profile, assessment: store.snapshot.metabolism)
                         if running {
                             AnalysisStatusView(progress: progress, startedAt: started, history: history) { cancel() }
-                        } else {
-                            Button { begin() } label: { Label("AI 分析静息代谢", systemImage: "sparkles") }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("metabolism.start")
                         }
                         if cancelled { Label("分析已取消，个人资料已保留。", systemImage: "pause.circle").font(.subheadline).foregroundStyle(.secondary) }
                         if let error {
@@ -147,7 +153,17 @@ struct MetabolismDetailView: View {
                 }.padding(18)
             }.background(skin.background).navigationTitle("代谢分析").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+                .pageActions {
+                    if !running, store.snapshot.profile != nil {
+                        EqualActions {
+                            Button("编辑资料") { editProfile = true }.buttonStyle(OutlineButtonStyle())
+                            Button(store.snapshot.metabolism == nil ? "AI 分析静息代谢" : "重新分析") { begin() }
+                                .buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("metabolism.start")
+                        }
+                    }
+                }
                 .onDisappear { cancel() }
+                .sheet(isPresented: $editProfile) { ProfileEditor(onboarding: false) }
                 .sheet(isPresented: $consent) {
                     AIConsentView {
                         do { try store.setAIConsent(true); run() }
@@ -204,6 +220,12 @@ struct SettingsView: View {
                         BrandWordmark(compact: false)
                         Text(AppBuild.label).font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("app.build")
                     }
+                    Card {
+                        NavigationLink { ServiceSettingsView(store: store) } label: {
+                            settingsRow(session.record?.username ?? "NAS 账号", symbol: "person.crop.circle.fill",
+                                        detail: membership.status?.active == true ? "会员用户" : "普通用户")
+                        }.buttonStyle(.plain)
+                    }
                     MembershipCard(active: membership.status?.active == true)
                     Text("AI 模型").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 10)
@@ -233,38 +255,19 @@ struct SettingsView: View {
                         }
                     }.buttonStyle(.plain)
                     Card {
-                        HStack {
-                            Text("个人资料").font(.headline)
-                            Spacer()
-                            Button(store.snapshot.profile == nil ? "完善资料" : "编辑") { editProfile = true }.font(.caption.weight(.semibold))
+                        Button { editProfile = true } label: {
+                            settingsRow("个人资料", symbol: "person", detail: "")
                         }
-                        if let profile = store.snapshot.profile {
-                            HStack {
-                                profileMetric("性别", profile.sex.label)
-                                profileMetric("年龄", "\(profile.age) 岁")
-                                profileMetric("身高", "\(Int(profile.heightCM)) cm")
-                                profileMetric("体重", "\(profile.weightKG.formatted(.number.precision(.fractionLength(0...1)))) kg")
-                            }
-                            Divider()
-                            HStack {
-                                Label("每日摄入目标", systemImage: "scope").font(.subheadline)
-                                Spacer()
-                                Text("\(Int(profile.dailyTarget)) kcal").font(.subheadline.weight(.semibold)).foregroundStyle(skin.accent)
-                            }
-                        } else {
-                            Text("填写基本信息，查看公式、AI 与综合代谢估算。").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    if let profile = store.snapshot.profile {
-                        MetabolismCard(profile: profile, assessment: store.snapshot.metabolism) { metabolism = true }
-                        Button { metabolism = true } label: {
-                            Label("查看代谢分析与估算依据", systemImage: "sparkles").font(.subheadline.weight(.medium))
-                        }.accessibilityIdentifier("metabolism.open")
-                    }
-                    Card {
+                        Divider()
                         NavigationLink { ServiceSettingsView(store: store) } label: {
-                            settingsRow("NAS 账号", symbol: "person.crop.circle", detail: session.record?.username ?? "登录")
+                            settingsRow("账号设置", symbol: "gearshape", detail: "")
                         }.accessibilityIdentifier("service.open")
+                        if store.snapshot.profile != nil {
+                            Divider()
+                            Button { metabolism = true } label: {
+                                settingsRow("代谢分析", symbol: "waveform.path.ecg", detail: "")
+                            }.accessibilityIdentifier("metabolism.open")
+                        }
                     }.buttonStyle(.plain)
                     Card {
                         Text("隐私与偏好").font(.headline)
@@ -296,12 +299,6 @@ struct SettingsView: View {
         guard let status = membership.status, status.enabled else { return "" }
         return status.active ? "本期剩余 \(status.remaining) 次" : "体验剩余 \(status.remaining) 次"
     }
-    private func profileMetric(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7)
-        }.frame(maxWidth: .infinity, alignment: .leading)
-    }
     private func settingsRow(_ title: String, symbol: String, detail: String, iconColor: Color? = nil, locked: Bool = false) -> some View {
         HStack(spacing: 11) {
             if title == "内置 DeepSeek" {
@@ -316,11 +313,12 @@ struct SettingsView: View {
             Spacer(minLength: 3)
             if locked { Image(systemName: "lock").font(.caption).foregroundStyle(.secondary) }
             Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
-        }.frame(minHeight: 32).contentShape(Rectangle())
+        }.frame(minHeight: 44).contentShape(Rectangle())
     }
 }
 
 struct ServiceSettingsView: View {
+    @Environment(\.appSkin) private var skin
     @EnvironmentObject private var session: AccountSession
     var store: AppStore? = nil
     @State private var address = ""
@@ -332,62 +330,119 @@ struct ServiceSettingsView: View {
     @State private var confirmPassword = ""
     @State private var confirmLogout = false
     @State private var confirmImport = false
+    @State private var editAddress = false
+    @State private var draftAddress = ""
 
     var body: some View {
-        Form {
-            if let account = session.record {
-                Section("当前账号") {
-                    LabeledContent("用户名", value: account.username)
-                    LabeledContent("NAS 地址", value: account.baseURL)
-                    Button("退出登录", role: .destructive) { confirmLogout = true }
-                        .accessibilityIdentifier("service.logout")
-                }
-                if store?.canImportLegacy == true {
-                    Section {
-                        Button("导入此手机的旧记录") { confirmImport = true }
-                    } footer: { Text("如果旧记录只存在这部手机，可将资料、饮食和照片复制到当前账号，再自动同步到服务器。") }
-                }
-            } else {
-                Section {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Image("BrandIcon").resizable().frame(width: 64, height: 64)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                        Text("欢迎使用轻记").font(.largeTitle.bold())
-                        Text("创建账号，开始记录每一餐").foregroundStyle(.secondary)
-                        Text(AppBuild.label).font(.caption).foregroundStyle(.secondary)
-                            .accessibilityIdentifier("app.build")
-                    }.padding(.vertical, 8)
-                }.listRowBackground(Color.clear)
-                Section {
-                    TextField("https://api.example.com", text: $address)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                        .accessibilityIdentifier("service.address")
-                    TextField("用户名", text: $username)
-                        .textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .accessibilityIdentifier("service.username")
-                    // Registration uses manual secure entry to avoid the system's strong-password
-                    // overlay swallowing edits in paired SwiftUI SecureFields. Login keeps AutoFill.
-                    SecureField("密码", text: $password).textContentType(registering ? .oneTimeCode : .password)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                        .accessibilityIdentifier("service.password")
-                    if registering {
-                        SecureField("确认密码", text: $confirmPassword).textContentType(.oneTimeCode)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .accessibilityIdentifier("service.confirm")
+        ScrollView {
+            VStack(spacing: 14) {
+                if let account = session.record {
+                    Card {
+                        LabeledContent("当前账号", value: account.username)
+                        Divider()
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("服务器地址").font(.subheadline.bold())
+                            Text(account.baseURL).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
+                        }
+                        if let store {
+                            Divider()
+                            LabeledContent("同步状态", value: store.cloudMessage)
+                        }
                     }
-                } header: { Text(registering ? "创建轻记账号" : "登录轻记账号") } footer: {
-                    Text("用户名支持字母、数字、点、横线及下划线。注册密码至少12个字符，记录随账号自动同步。")
-                }
-                Section {
-                    Button(registering ? "注册并开始" : "登录") { login() }.disabled(working || address.isEmpty || username.isEmpty || password.isEmpty)
-                        .accessibilityIdentifier("service.save")
-                    Button(registering ? "已有账号？登录" : "创建新账号") { registering.toggle() }
-                        .accessibilityIdentifier("service.mode")
+                    if store?.canImportLegacy == true {
+                        Card {
+                            Button("导入此手机的旧记录") { confirmImport = true }
+                                .frame(minHeight: 44)
+                            Text("将本机已有的饮食记录导入当前账号。").font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                } else {
+                    VStack(spacing: 8) {
+                        Image("BrandIcon").resizable().frame(width: 74, height: 74)
+                            .clipShape(RoundedRectangle(cornerRadius: 18))
+                        Text("欢迎使用轻记").font(.largeTitle.bold()).foregroundStyle(skin.accent)
+                        Text(registering ? "创建账号，开始记录每一餐" : "登录账号，继续记录每一餐")
+                            .font(.subheadline).foregroundStyle(.secondary)
+                        Text(AppBuild.label).font(.caption2).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("app.build")
+                    }.padding(.vertical, 12)
+                    Card {
+                        accountField("用户名") {
+                            TextField("请输入用户名", text: $username)
+                                .textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .accessibilityIdentifier("service.username")
+                        }
+                        accountField("密码") {
+                            SecureField("请输入密码", text: $password).textContentType(registering ? .oneTimeCode : .password)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .accessibilityIdentifier("service.password")
+                        }
+                        if registering {
+                            accountField("确认密码") {
+                                SecureField("请再次输入密码", text: $confirmPassword).textContentType(.oneTimeCode)
+                                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                                    .accessibilityIdentifier("service.confirm")
+                            }
+                        }
+                    }
+                    Button {
+                        draftAddress = address
+                        editAddress = true
+                    } label: {
+                        Card {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("服务器地址").font(.subheadline.bold()).foregroundStyle(.primary)
+                                    Text(address).font(.footnote).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }.contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityIdentifier("service.address.open").disabled(working)
                     if working { ProgressView("正在验证账号…") }
                 }
+                if let error { Text(error).font(.caption).foregroundStyle(.red).accessibilityIdentifier("service.error") }
+            }.padding(Theme.gutter)
+        }.background(skin.background).scrollDismissesKeyboard(.interactively)
+            .navigationTitle(session.record == nil ? "" : "NAS 账号").navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .tabBar)
+            .pageActions {
+                if session.record != nil {
+                    Button("退出登录", role: .destructive) { confirmLogout = true }
+                        .buttonStyle(OutlineButtonStyle()).accessibilityIdentifier("service.logout")
+                } else {
+                    VStack(spacing: 2) {
+                        Button(registering ? "注册并开始" : "登录") { login() }
+                            .buttonStyle(PrimaryButtonStyle()).disabled(working || address.isEmpty || username.isEmpty || password.isEmpty || (registering && confirmPassword.isEmpty))
+                            .accessibilityIdentifier("service.save")
+                        Button(registering ? "已有账号？登录" : "创建新账号") { registering.toggle(); confirmPassword = ""; error = nil }
+                            .font(.subheadline.weight(.semibold)).frame(minHeight: 44)
+                            .accessibilityIdentifier("service.mode").disabled(working)
+                    }
+                }
             }
-            if let error { Text(error).font(.caption).foregroundStyle(.red).accessibilityIdentifier("service.error") }
-        }.navigationTitle("NAS 账号").navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $editAddress) {
+                NavigationStack {
+                    ScrollView {
+                        Card {
+                            accountField("服务器地址") {
+                                TextField("https://", text: $draftAddress)
+                                    .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                                    .accessibilityIdentifier("service.address")
+                            }
+                        }.padding(Theme.gutter)
+                    }.background(skin.background).navigationTitle("服务器地址").navigationBarTitleDisplayMode(.inline)
+                        .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { editAddress = false } } }
+                        .pageActions {
+                            Button("保存地址") {
+                                address = draftAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                                editAddress = false
+                            }.buttonStyle(PrimaryButtonStyle()).disabled(!ServiceConfiguration.validAddress(draftAddress.trimmingCharacters(in: .whitespacesAndNewlines)))
+                                .accessibilityIdentifier("service.address.save")
+                        }
+                }.presentationDetents([.medium, .large])
+            }
             .onAppear { if address.isEmpty { address = session.lastAddress } }
             .alert("退出当前账号？", isPresented: $confirmLogout) {
                 Button("退出登录", role: .destructive) {
@@ -401,6 +456,14 @@ struct ServiceSettingsView: View {
                 }
                 Button("取消", role: .cancel) {}
             } message: { Text("旧记录会复制到这个账号。") }
+    }
+
+    private func accountField<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.subheadline.weight(.semibold))
+            content().font(.subheadline).padding(.horizontal, 11).frame(minHeight: 44)
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.25)))
+        }
     }
 
     private func login() {
@@ -421,18 +484,29 @@ struct ServiceSettingsView: View {
 }
 
 struct PrivacyView: View {
+    @Environment(\.appSkin) private var skin
+
     var body: some View {
-        List {
-            Section("本机数据") {
-                Text("本机文件按账号隔离，登录凭证保存在钥匙串。个人资料、饮食、照片、代谢结果和活动汇总随当前账号自动同步到所连接的服务器。")
-            }
-            Section("AI 上传") {
-                Text("只有主动发起 AI 分析时，所配置的模型服务才收到本餐照片与补充说明，或年龄、性别、身高、体重。AI 分析需要单独授权。请了解所选服务的隐私政策。")
+        ScrollView {
+            VStack(spacing: 14) {
+                explanation("本机与账号数据", icon: "externaldrive",
+                    detail: "本机文件按账号隔离，登录凭证存放在钥匙串。资料、饮食、照片、代谢和活动记录随当前账号同步。")
+                explanation("AI 上传", icon: "sparkles",
+                    detail: "主动分析时，模型服务收到本次照片和说明，或用于代谢估算的基本资料。请了解所用服务的隐私政策。")
+                explanation("估算说明", icon: "scalemass",
+                    detail: "照片中的份量与热量、公式及 AI 代谢结果均为估算。保存前请核对食物、份量与热量。")
                 Link("DeepSeek 隐私政策", destination: URL(string: "https://cdn.deepseek.com/policies/zh-CN/deepseek-privacy-policy.html")!)
-            }
-            Section("估算边界") {
-                Text("单张照片无法可靠测量实际克数、油、糖和内部配料。公式与 AI 都不是代谢实测。综合规则未经临床验证，不用于疾病诊断、治疗或自动处方。")
-            }
-        }.navigationTitle("隐私与使用说明")
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                Link("订阅条款", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            }.padding(Theme.gutter)
+        }.background(skin.background).subpageNavigation(title: "隐私与使用说明")
+    }
+
+    private func explanation(_ title: String, icon: String, detail: String) -> some View {
+        Card {
+            Label(title, systemImage: icon).font(.headline)
+            Text(detail).font(.subheadline).foregroundStyle(.secondary)
+        }
     }
 }

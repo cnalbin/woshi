@@ -1,6 +1,15 @@
 import SwiftUI
 import UIKit
 
+struct SyncComparison: Equatable {
+    let serverRevision: Int
+    let localGeneration: Int
+    let serverMeal: Meal?
+    let localMeal: Meal?
+    let serverPhoto: CloudPhoto?
+    let hasMealConflict: Bool
+}
+
 @MainActor
 final class AppStore: ObservableObject {
     @Published private(set) var snapshot = AppSnapshot()
@@ -11,6 +20,7 @@ final class AppStore: ObservableObject {
     @Published private(set) var cloudSyncing = false
     @Published private(set) var cloudMessage = "等待同步"
     @Published private(set) var cloudLastSynced: Date?
+    @Published private(set) var syncComparison: SyncComparison?
     @Published private(set) var canUndoRestore = false
     private var cloudState = CloudState()
     private var cloudTask: Task<Void, Never>?
@@ -225,7 +235,7 @@ final class AppStore: ObservableObject {
         return (copy, CloudClient.hash(try encoder.encode(copy)))
     }
 
-    func backupToCloud(onlyIfChanged: Bool = false, keepLocal: Bool = false) async {
+    func backupToCloud(onlyIfChanged: Bool = false, keepLocal: Bool = false, reviewed: SyncComparison? = nil) async {
         let configuration = service
         guard !cloudSyncing, !storageUnavailable, configuration.isValid else { return }
         cloudSyncing = true
@@ -238,6 +248,9 @@ final class AppStore: ObservableObject {
         do {
             let client = CloudClient(configuration: configuration)
             let remote = try await client.read()
+            if let reviewed, reviewed.serverRevision != remote.revision || reviewed.localGeneration != savedGeneration {
+                throw CloudError.conflict
+            }
             let baselineFile = folder.appendingPathComponent("sync-baseline.json")
             let baseline = await Task.detached(priority: .utility) {
                 (try? JSONDecoder().decode(AppSnapshot.self, from: Data(contentsOf: baselineFile))) ?? AppSnapshot()
@@ -249,15 +262,30 @@ final class AppStore: ObservableObject {
                 cloudState.enabled = true
                 cloudState.identity = client.identity
                 try saveCloudState()
+                syncComparison = nil
                 if cloudMessage != "已同步" { cloudMessage = "已同步" }
                 return
             }
             var merged = snapshot
             if !keepLocal {
                 let local = snapshot
-                merged = try await Task.detached(priority: .utility) {
-                    try SnapshotMerge.merge(base: baseline, local: local, remote: remote.snapshot ?? AppSnapshot())
-                }.value
+                let remoteSnapshot = remote.snapshot ?? AppSnapshot()
+                do {
+                    merged = try await Task.detached(priority: .utility) {
+                        try SnapshotMerge.merge(base: baseline, local: local, remote: remoteSnapshot)
+                    }.value
+                } catch SnapshotMerge.Conflict.concurrentEdit {
+                    let meals = await Task.detached(priority: .utility) {
+                        SnapshotMerge.conflictingMeal(base: baseline, local: local, remote: remoteSnapshot)
+                    }.value
+                    guard savedGeneration == generation else { return }
+                    let comparison = SyncComparison(serverRevision: remote.revision, localGeneration: savedGeneration,
+                        serverMeal: meals?.remote, localMeal: meals?.local,
+                        serverPhoto: remote.photos.first { $0.filename == meals?.remote?.photoFilename }, hasMealConflict: meals != nil)
+                    if syncComparison != comparison { syncComparison = comparison }
+                    cloudMessage = "同一记录在其他设备有修改，请在数据同步页选择版本"
+                    return
+                }
             }
             let names = Set(merged.meals.compactMap(\.photoFilename))
             for reference in remote.photos where names.contains(reference.filename) {
@@ -305,13 +333,16 @@ final class AppStore: ObservableObject {
             cloudState.enabled = true
             cloudState.identity = client.identity
             try saveCloudState()
+            syncComparison = nil
             cloudMessage = generation == settledGeneration ? "已同步" : "等待同步"
-        } catch SnapshotMerge.Conflict.concurrentEdit {
-            cloudMessage = "同一记录在其他设备有修改，请在数据同步页选择版本"
+        } catch CloudError.conflict {
+            syncComparison = nil
+            cloudMessage = "服务器或本机有更新，正在重新检查同步。"
+            scheduleCloudBackup()
         } catch { cloudMessage = "等待同步 · " + error.localizedDescription }
     }
 
-    func restoreFromCloud() async {
+    func restoreFromCloud(reviewed: SyncComparison? = nil) async {
         let configuration = service
         guard !cloudSyncing, !storageUnavailable, configuration.isValid else { return }
         cloudTask?.cancel()
@@ -323,6 +354,9 @@ final class AppStore: ObservableObject {
         do {
             cloudMessage = "正在读取 NAS 记录…"
             let remote = try await client.read()
+            if let reviewed, reviewed.serverRevision != remote.revision || reviewed.localGeneration != savedGeneration {
+                throw CloudError.conflict
+            }
             guard var copy = remote.snapshot, copy.schemaVersion == 1, copy.profile?.isValid != false,
                   copy.meals.allSatisfy(\.isValid) else { throw CloudError.message("NAS 没有可恢复的有效备份，本机资料未改变。") }
             let names = Set(copy.meals.compactMap(\.photoFilename))
@@ -333,6 +367,10 @@ final class AppStore: ObservableObject {
                 cloudMessage = "正在恢复照片 \(index + 1)/\(remote.photos.count)…"
                 let data = try await client.download(digest: reference.sha256)
                 try data.write(to: staging.appendingPathComponent(reference.filename), options: [.atomic, .completeFileProtection])
+            }
+            if reviewed != nil {
+                let latest = try await client.revision()
+                guard latest == remote.revision else { throw CloudError.conflict }
             }
             guard generation == savedGeneration, client.identity == service.workspaceID else {
                 throw CloudError.message("下载期间本机记录或服务配置发生变化，请重新恢复；没有覆盖本机数据。")
@@ -368,13 +406,21 @@ final class AppStore: ObservableObject {
             }
             copy.aiConsent = snapshot.aiConsent
             try commit(copy, schedule: false)
-            try JSONEncoder().encode(copy).write(to: folder.appendingPathComponent("sync-baseline.json"), options: [.atomic, .completeFileProtection])
+            var baseline = remote.snapshot ?? copy
+            baseline.aiConsent = false
+            try JSONEncoder().encode(baseline).write(to: folder.appendingPathComponent("sync-baseline.json"), options: [.atomic, .completeFileProtection])
             cloudState.identity = client.identity
             cloudState.revision = remote.revision
             cloudState.lastSynced = Date()
             cloudState.lastSnapshotHash = try backupSnapshot().1
             try saveCloudState()
-            cloudMessage = "已从 NAS 恢复 \(copy.meals.count) 条饮食记录及照片；可重新开启自动备份"
+            syncComparison = nil
+            cloudMessage = reviewed == nil ? "已从 NAS 恢复 \(copy.meals.count) 条饮食记录及照片" : "已同步"
+            if reviewed != nil { scheduleCloudBackup() }
+        } catch CloudError.conflict {
+            syncComparison = nil
+            cloudMessage = "服务器或本机有更新，正在重新检查同步。"
+            scheduleCloudBackup()
         } catch { cloudMessage = error.localizedDescription }
     }
 

@@ -34,8 +34,9 @@ struct TrendsView: View {
     @StateObject private var model = TrendsModel()
     @State private var period = TrendPeriod.week
     @State private var anchor = Date()
-    @State private var activityOnly = true
+    @State private var activityOnly = false
     @State private var selectedSlot: Int?
+    @State private var editing: Meal?
     private var calendar: Calendar { var c = Calendar.current; c.firstWeekday = 2; return c }
     private var key: TrendsModel.Key {
         .init(period: period.rawValue, start: calendar.dateInterval(of: period.component, for: anchor)!.start,
@@ -45,7 +46,6 @@ struct TrendsView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 16) {
-                    HStack { Text("看见每一天的变化").font(.subheadline).foregroundStyle(.secondary); Spacer() }
                     Picker("范围", selection: $period) {
                         ForEach(TrendPeriod.allCases) { Text($0.label).tag($0) }
                     }.pickerStyle(.segmented).accessibilityIdentifier("trends.period")
@@ -55,6 +55,8 @@ struct TrendsView: View {
             }.background(skin.background)
                 .navigationTitle("趋势").navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(skin.background, for: .navigationBar)
+                .toolbar { ToolbarItem(placement: .principal) { BrandWordmark() } }
+                .sheet(item: $editing) { MealEditor(existing: $0, initialDate: $0.consumedAt) }
                 .task(id: key) { await model.load(key: key, snapshot: store.snapshot, period: period, anchor: anchor, calendar: calendar) }
                 .onChange(of: key) { _, _ in selectedSlot = nil }
         }
@@ -62,11 +64,11 @@ struct TrendsView: View {
 
     @ViewBuilder private func content(_ report: TrendReport) -> some View {
         HStack {
-            Button { move(-1) } label: { Image(systemName: "chevron.left").frame(width: 40, height: 40) }.accessibilityLabel("上一时段")
+            Button { move(-1) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }.accessibilityLabel("上一时段")
             Spacer(minLength: 4)
             Text(report.title).font(.subheadline.weight(.semibold)).accessibilityIdentifier("trends.range")
             Spacer(minLength: 4)
-            Button { move(1) } label: { Image(systemName: "chevron.right").frame(width: 40, height: 40) }
+            Button { move(1) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
                 .disabled(report.interval.end > Date()).accessibilityLabel("下一时段")
         }
         HStack(spacing: 10) {
@@ -87,6 +89,10 @@ struct TrendsView: View {
                 if period == .year { anchor = bucket.date; period = .month }
                 else { selectedSlot = bucket.slot }
             }.frame(height: 200)
+            if let slot = selectedSlot, let day = report.buckets.first(where: { $0.slot == slot }), period != .year {
+                Text("摄入 \(number(day.intake)) / 消耗 \(number(activityOnly ? day.activity : day.total)) kcal")
+                    .font(.caption.weight(.semibold)).foregroundStyle(skin.accent)
+            }
             Text(!report.hasData ? "这个时段还没有记录，回到今日记下第一餐吧。" :
                 period == .year ? "点击柱状图查看该月 · 未记录的数据留空" : "点击柱状图查看当日 · 未记录的数据留空")
                 .font(.caption).foregroundStyle(.secondary)
@@ -105,14 +111,18 @@ struct TrendsView: View {
                 Text(bucket.date.formatted(.dateTime.month().day())).font(.headline)
                 if bucket.meals.isEmpty { Text("当天未记录饮食").font(.subheadline).foregroundStyle(.secondary) }
                 ForEach(bucket.meals) { meal in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(meal.items.map(\.name).joined(separator: "、")).font(.subheadline).lineLimit(2)
-                            Text(meal.kind.label).font(.caption).foregroundStyle(.secondary)
+                    Button { editing = meal } label: {
+                        HStack {
+                            MealThumbnail(url: store.photoURL(for: meal), symbol: meal.kind.symbol)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(meal.kind.label).font(.subheadline.weight(.semibold))
+                                Text(meal.items.map(\.name).joined(separator: "、")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            }
+                            Spacer()
+                            Text("\(Int(meal.totalKcal.rounded())) kcal").font(.subheadline.weight(.semibold))
+                            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.secondary)
                         }
-                        Spacer()
-                        Text("\(Int(meal.totalKcal.rounded())) kcal").font(.subheadline.weight(.semibold))
-                    }
+                    }.buttonStyle(.plain)
                 }
             }
         }

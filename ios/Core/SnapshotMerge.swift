@@ -26,4 +26,15 @@ enum SnapshotMerge {
         result.activityDays = try records(base.activityDays, local.activityDays, remote.activityDays).sorted { $0.id < $1.id }
         return result
     }
+
+    static func conflictingMeal(base: AppSnapshot, local: AppSnapshot, remote: AppSnapshot) -> (local: Meal?, remote: Meal?)? {
+        let old = Dictionary(uniqueKeysWithValues: base.meals.map { ($0.id, $0) })
+        let ours = Dictionary(uniqueKeysWithValues: local.meals.map { ($0.id, $0) })
+        let theirs = Dictionary(uniqueKeysWithValues: remote.meals.map { ($0.id, $0) })
+        let ids = Set(ours.keys).union(theirs.keys).sorted { $0.uuidString < $1.uuidString }
+        for id in ids where ours[id] != theirs[id] && ours[id] != old[id] && theirs[id] != old[id] {
+            return (ours[id], theirs[id])
+        }
+        return nil
+    }
 }

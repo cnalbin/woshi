@@ -68,7 +68,7 @@ struct RootView: View {
     @EnvironmentObject private var store: AppStore
     var body: some View {
         TabView {
-            TodayView().tabItem { Label("今日", systemImage: "calendar") }
+            TodayView().tabItem { Label("今日", systemImage: "house") }
             TrendsView().tabItem { Label("趋势", systemImage: "chart.bar") }
             SettingsView().tabItem { Label("我的", systemImage: "person") }
         }

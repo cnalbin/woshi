@@ -179,6 +179,8 @@ struct BuiltInModelView: View {
     @EnvironmentObject private var membership: MembershipModel
     @Environment(\.appSkin) private var skin
     @State private var error: String?
+    var onManual: (() -> Void)? = nil
+    private var exhausted: Bool { membership.status?.remaining == 0 }
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
@@ -196,12 +198,20 @@ struct BuiltInModelView: View {
                     }
                 }
                 if let status = membership.status { MembershipQuotaCard(status: status) }
-                Text("支持的任务").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+                Text(exhausted ? "会员权益" : "支持的任务").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6)
                 Card {
-                    Label { Text("拍照识别") } icon: { Image(systemName: "camera").foregroundStyle(skin.accent) }
-                    Divider()
-                    Label { Text("静息代谢") } icon: { Image(systemName: "waveform.path.ecg").foregroundStyle(skin.accent) }
+                    if exhausted {
+                        Label("每周期 100 次内置分析", systemImage: "bolt")
+                        Divider()
+                        Label("自定义模型", systemImage: "chevron.left.forwardslash.chevron.right")
+                        Divider()
+                        Label("会员专属皮肤", systemImage: "paintpalette")
+                    } else {
+                        Label { Text("拍照识别") } icon: { Image(systemName: "camera").foregroundStyle(skin.accent) }
+                        Divider()
+                        Label { Text("静息代谢") } icon: { Image(systemName: "waveform.path.ecg").foregroundStyle(skin.accent) }
+                    }
                 }
                 Label("确认食物信息后重新估算，仍计为一次分析", systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
@@ -210,13 +220,16 @@ struct BuiltInModelView: View {
             }.padding(18)
         }.background(skin.background).navigationTitle("内置 DeepSeek").navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
-            .safeAreaInset(edge: .bottom) {
+            .pageActions {
+              VStack(spacing: 0) {
                 NavigationLink {
                     if membership.status?.active == true { MembershipManagementView() }
                     else { MembershipPurchaseView() }
                 } label: {
                     Text(membership.status?.active == true ? "查看会员权益" : "开通会员")
-                }.buttonStyle(PrimaryButtonStyle()).padding(18).background(skin.background)
+                }.buttonStyle(PrimaryButtonStyle())
+                if exhausted, let onManual { Button("手动记录", action: onManual).frame(minHeight: 44) }
+              }
             }
             .task { await membership.refresh() }
     }
@@ -235,18 +248,25 @@ struct CustomModelEntry: View {
         } else {
             ScrollView {
                 VStack(spacing: 18) {
+                    Image(systemName: "chevron.left.forwardslash.chevron.right").font(.largeTitle).foregroundStyle(skin.accent)
+                        .frame(width: 72, height: 72).background(skin.membershipBackground, in: RoundedRectangle(cornerRadius: 18))
+                    Text("自定义模型").font(.title.bold())
+                    Text("开通会员，使用自己的 AI 模型").foregroundStyle(.secondary)
                     Card {
-                        Label("自定义模型", systemImage: "lock").font(.title2.bold())
-                        Text("使用自己的 API Key，分别配置文字和图片模型。").foregroundStyle(.secondary)
+                        Label("自定义 API 与模型", systemImage: "slider.horizontal.3")
                         Divider()
                         Label("编辑提示词", systemImage: "pencil")
-                        Label("调试模型", systemImage: "terminal")
+                        Divider()
+                        Label("文字与图片调试", systemImage: "photo")
+                        Divider()
                         Label("查询余额", systemImage: "creditcard")
                     }
-                    NavigationLink("开通会员使用") { MembershipPurchaseView() }.buttonStyle(PrimaryButtonStyle())
                 }.padding(18)
             }.background(skin.background).navigationTitle("自定义模型").navigationBarTitleDisplayMode(.inline)
                 .toolbar(.hidden, for: .tabBar)
+                .pageActions {
+                    NavigationLink("开通会员使用") { MembershipPurchaseView() }.buttonStyle(PrimaryButtonStyle())
+                }
                 .task { await membership.refresh() }
         }
     }

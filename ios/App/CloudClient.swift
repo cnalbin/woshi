@@ -1,7 +1,7 @@
 import Foundation
 import CryptoKit
 
-struct CloudPhoto: Codable { var filename: String; var sha256: String }
+struct CloudPhoto: Codable, Equatable { var filename: String; var sha256: String }
 struct CloudEnvelope: Codable {
     var revision: Int
     var updatedAt: String?
@@ -24,10 +24,11 @@ struct CloudState: Codable {
 }
 
 enum CloudError: LocalizedError {
-    case conflict, message(String)
+    case conflict, notFound, message(String)
     var errorDescription: String? {
         switch self {
         case .conflict: return "服务器已有更新，本机记录已保留。请重试同步。"
+        case .notFound: return "服务器暂未提供同步状态接口。"
         case .message(let text): return text
         }
     }
@@ -40,6 +41,14 @@ struct CloudClient {
 
     func read() async throws -> CloudEnvelope {
         try JSONDecoder().decode(CloudEnvelope.self, from: await request("v1/backup", method: "GET"))
+    }
+    func revision() async throws -> Int {
+        struct Status: Decodable { let revision: Int }
+        do {
+            return try JSONDecoder().decode(Status.self, from: await request("v1/backup/status", method: "GET")).revision
+        } catch CloudError.notFound {
+            return try await read().revision
+        }
     }
     func write(_ value: CloudSubmission) async throws -> CloudReceipt {
         let data = try JSONEncoder().encode(value)
@@ -79,6 +88,7 @@ struct CloudClient {
         }
         guard (200...299).contains(response.statusCode) else {
             if response.statusCode == 409 { throw CloudError.conflict }
+            if response.statusCode == 404 && path == "v1/backup/status" { throw CloudError.notFound }
             let message = (try? JSONDecoder().decode(ServiceError.self, from: result))?.message
             throw CloudError.message(message ?? "NAS 连接失败（\(response.statusCode)），本机资料仍然保留。")
         }

@@ -63,21 +63,22 @@ struct MealEditor: View {
                     Button { editingFood = FoodItem(name: "", kcal: 0) } label: { Label("添加食物", systemImage: "plus") }
                         .accessibilityIdentifier("food.add")
                         .disabled(items.count >= 30)
-                } header: { Text("食物与热量 · 点击修改，左滑删除") }
+                } header: { Text("食物与热量") }
                 Section {
                     Picker("实际吃了", selection: $fraction) {
                         Text("全部").tag(1.0); Text("1/2").tag(0.5); Text("1/4").tag(0.25)
                     }.pickerStyle(.segmented)
-                    HStack {
-                        Text("本次摄入").font(.headline)
-                        Spacer()
-                        Text("\(Int(total.rounded())) kcal").font(.title2.bold()).foregroundStyle(skin.accent)
-                    }
                 } footer: {
                     Text(analysis?.portionBasis == "consumed"
                          ? "AI 已按你说明的实际摄入估算。若列表与实际相符，请保留「全部」，避免重复折算。"
                          : "食物列表显示整份，保存时按所选比例折算。已保存记录再次打开时，列表显示上次实际吃下的量。")
                 }
+                Section {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("本次摄入").font(.subheadline.weight(.semibold))
+                        Text("\(Int(total.rounded())) kcal").font(.title2.bold()).foregroundStyle(skin.accent)
+                    }.padding(.vertical, 5)
+                }.listRowBackground(skin.membershipBackground)
                 if let summary = analysis?.summary ?? existing?.summary, !summary.isEmpty {
                     Section("估算依据") {
                         Label("AI 估算，保存前请核对", systemImage: "sparkles").foregroundStyle(skin.accent)
@@ -96,12 +97,11 @@ struct MealEditor: View {
                 }
             }
             .scrollContentBackground(.hidden).background(skin.background)
-            .navigationTitle(existing == nil ? "确认这餐" : "编辑记录").navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom) {
-                Button(saving ? "正在保存…" : "确认并保存") { save() }.buttonStyle(PrimaryButtonStyle())
+            .navigationTitle(existing != nil ? "编辑饮食记录" : analysis == nil ? "手动记餐" : "核对食物与份量").navigationBarTitleDisplayMode(.inline)
+            .pageActions {
+                Button(saving ? "正在保存…" : existing == nil ? "确认并保存" : "保存修改") { save() }.buttonStyle(PrimaryButtonStyle())
                     .accessibilityIdentifier("meal.save")
                     .disabled(!valid || saving || store.storageUnavailable)
-                    .padding(.horizontal, 18).padding(.vertical, 10).background(skin.background)
             }
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
             .onAppear { initialize() }
@@ -172,23 +172,34 @@ struct FoodEditor: View {
     }
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    TextField("食物名称", text: $name).accessibilityIdentifier("food.name")
-                    HStack { Text("份量（可选）"); TextField("克数", text: $grams).keyboardType(.decimalPad).multilineTextAlignment(.trailing); Text("克").foregroundStyle(.secondary) }
-                    HStack { Text("热量"); TextField("必填", text: $kcal).keyboardType(.decimalPad).multilineTextAlignment(.trailing).accessibilityIdentifier("food.kcal"); Text("kcal").foregroundStyle(.secondary) }
-                } footer: { Text("可直接输入包装标签或你确认的热量。份量未知时可以留空。") }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Card {
+                        foodField("食物名称") { TextField("例如：米饭", text: $name).accessibilityIdentifier("food.name") }
+                        foodField("份量（可选）") {
+                            HStack { TextField("克数", text: $grams).keyboardType(.decimalPad); Text("克").foregroundStyle(.secondary) }
+                        }
+                        foodField("热量") {
+                            HStack { TextField("必填", text: $kcal).keyboardType(.decimalPad).accessibilityIdentifier("food.kcal"); Text("kcal").foregroundStyle(.secondary) }
+                        }
+                    }
+                    Label("可参考包装营养标签。", systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary)
                 if let base = food.grams, base > 0, let next = NumberText.parse(grams), next > 0 {
-                    Section {
+                    Card {
                         Button("按新克数同比换算热量") { kcal = (food.kcal * next / base).formatted(.number.grouping(.never).precision(.fractionLength(0...1))) }
-                    } footer: { Text("换算假设食物配方和热量密度相同；也可直接修改热量。") }
+                        Text("按相同食物配方和热量密度换算。也可直接修改热量。").font(.footnote).foregroundStyle(.secondary)
+                    }
                 }
+                }.padding(Theme.gutter)
             }
-            .scrollContentBackground(.hidden).background(skin.background)
-            .navigationTitle("编辑食物").navigationBarTitleDisplayMode(.inline)
+            .background(skin.background).scrollDismissesKeyboard(.interactively)
+            .navigationTitle(food.name.isEmpty ? "添加食物" : "编辑食物").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) { Button("完成") { if let updated { onSave(updated); dismiss() } }.disabled(updated == nil).accessibilityIdentifier("food.done") }
+            }
+            .pageActions {
+                Button("保存食物") { if let updated { onSave(updated); dismiss() } }
+                    .buttonStyle(PrimaryButtonStyle()).disabled(updated == nil).accessibilityIdentifier("food.done")
             }
             .onAppear {
                 name = food.name; grams = food.grams.map { $0.formatted(.number.grouping(.never).precision(.fractionLength(0...1))) } ?? ""
@@ -196,10 +207,20 @@ struct FoodEditor: View {
             }
         }
     }
+
+    private func foodField<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.subheadline.weight(.semibold))
+            content().padding(.horizontal, 12).frame(minHeight: 44)
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.secondary.opacity(0.25)))
+        }
+    }
 }
 
 struct PhotoMealView: View {
     @Environment(\.appSkin) private var skin
+    @State private var showQuota = false
+    @State private var manualAfterQuota = false
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var membership: MembershipModel
     @Environment(\.dismiss) private var dismiss
@@ -236,21 +257,31 @@ struct PhotoMealView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
+                        if running || analysis != nil, let preview {
+                            HStack(spacing: 12) {
+                                Image(uiImage: preview).resizable().scaledToFill().frame(width: 80, height: 70)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                if running { Text("根据本次照片估算食物与热量").font(.subheadline).foregroundStyle(.secondary) }
+                                else { Label("估算完成", systemImage: "checkmark.circle.fill").foregroundStyle(skin.accent) }
+                            }
+                        } else {
                         photoPreview
-                        HStack(spacing: 12) {
-                            Button { showCamera = true } label: { Label("拍摄照片", systemImage: "camera").frame(maxWidth: .infinity) }
-                                .buttonStyle(.borderedProminent).disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
-                            Button { showLibrary = true } label: { Label("从相册选择", systemImage: "photo").frame(maxWidth: .infinity) }
-                                .buttonStyle(.bordered)
+                        EqualActions {
+                            Button { showCamera = true } label: { Label("拍摄照片", systemImage: "camera") }
+                                .buttonStyle(OutlineButtonStyle()).disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
+                                .accessibilityIdentifier("photo.camera")
+                            Button { showLibrary = true } label: { Label("从相册选择", systemImage: "photo") }
+                                .buttonStyle(OutlineButtonStyle()).accessibilityIdentifier("photo.library")
                         }.disabled(running || loadingImage)
                         if loadingImage { ProgressView("正在准备照片…").font(.caption) }
                         Card {
-                            Text("补充一点信息，估算更贴近这一餐").font(.subheadline.weight(.semibold))
+                            Text("补充说明").font(.subheadline.weight(.semibold))
                             TextField("例如：半碗米饭，鸡肉去皮，汤没喝", text: $note, axis: .vertical)
                                 .font(.subheadline).lineLimit(2...4).disabled(running || !pendingQuestions.isEmpty)
                                 .accessibilityIdentifier("photo.note")
                                 .onChange(of: note) { _, value in if value.count > 500 { note = String(value.prefix(500)) } }
                             Text("可填写份量、做法和实际吃下的比例").font(.caption2).foregroundStyle(.secondary)
+                        }
                         }
                         if running {
                             AnalysisStatusView(progress: progress, startedAt: started, history: history) { task?.cancel() }
@@ -266,10 +297,6 @@ struct PhotoMealView: View {
                                 }
                                 Button("重新识别照片") { resetConfirmation(); begin() }.font(.caption)
                             }
-                        } else if analysis == nil {
-                            Button { begin() } label: { Label(cancelled || error != nil ? "重新分析" : "开始 AI 分析", systemImage: "sparkles") }
-                                .buttonStyle(PrimaryButtonStyle()).disabled(imageData == nil || loadingImage)
-                                .accessibilityIdentifier("photo.start")
                         }
                         if cancelled && !running {
                             Card {
@@ -282,11 +309,7 @@ struct PhotoMealView: View {
                             Card {
                                 Label("这次分析未完成", systemImage: "exclamationmark.circle").font(.headline).foregroundStyle(Theme.orange)
                                 Text(error).font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
-                                HStack {
-                                    Button("模型设置") { showModel = true }
-                                    Spacer()
-                                    Button("改为手动记录") { analysis = nil; review = true }
-                                }.font(.subheadline)
+                                Button("检查模型设置") { showModel = true }.font(.subheadline).frame(minHeight: 44)
                             }
                         }
                         if let analysis, !running { resultCard(analysis).id("photo.result") }
@@ -300,6 +323,34 @@ struct PhotoMealView: View {
                     }
             }.navigationTitle("拍照记餐").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
+                .pageActions {
+                    if !running && pendingQuestions.isEmpty {
+                        if analysis != nil {
+                            VStack(spacing: 0) {
+                                Button("核对食物与份量") { review = true }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("photo.review")
+                                Button("重新分析") { begin() }.frame(minHeight: 44).accessibilityIdentifier("photo.start")
+                            }
+                        } else if error != nil {
+                            EqualActions {
+                                Button("手动记录") { review = true }.buttonStyle(OutlineButtonStyle())
+                                Button("重新分析") { begin() }.buttonStyle(PrimaryButtonStyle())
+                                    .disabled(imageData == nil || loadingImage).accessibilityIdentifier("photo.start")
+                            }
+                        } else {
+                            Button(cancelled ? "重新分析" : "开始 AI 分析") { begin() }
+                                .buttonStyle(PrimaryButtonStyle()).disabled(imageData == nil || loadingImage)
+                                .accessibilityIdentifier("photo.start")
+                        }
+                    }
+                }
+                .sheet(isPresented: $showQuota, onDismiss: {
+                    if manualAfterQuota { manualAfterQuota = false; review = true }
+                }) {
+                    NavigationStack {
+                        BuiltInModelView(onManual: { manualAfterQuota = true; showQuota = false })
+                            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { showQuota = false } } }
+                    }
+                }
                 .photosPicker(isPresented: $showLibrary, selection: $selection, matching: .images)
                 .task(id: selection) {
                     guard let selection else { return }
@@ -362,7 +413,7 @@ struct PhotoMealView: View {
     }
     private func resultCard(_ result: MealAnalysis) -> some View {
         Card {
-            Label("估算完成，核对后保存", systemImage: "checkmark.circle.fill")
+            Label(result.confirmationApplied == true ? "已结合你的确认重新估算" : "估算完成，核对后保存", systemImage: "checkmark.circle.fill")
                 .font(.subheadline.weight(.semibold)).foregroundStyle(skin.accent).accessibilityIdentifier("photo.result")
             HStack(alignment: .firstTextBaseline) {
                 Text("\(Int(result.items.reduce(0) { $0 + $1.estimatedKcal }.rounded()))")
@@ -393,12 +444,6 @@ struct PhotoMealView: View {
                     }
                 }.foregroundStyle(.secondary).padding(.top, 6)
             }.font(.caption)
-            Button("核对食物与份量") { review = true }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("photo.review")
-            HStack {
-                Text("份量与用油会影响估算，确认后才保存。").font(.caption2).foregroundStyle(.secondary)
-                Spacer()
-                Button("重新分析") { begin() }.font(.caption).accessibilityIdentifier("photo.start")
-            }
         }
     }
     private func setImage(_ image: UIImage) async {
@@ -471,6 +516,11 @@ struct PhotoMealView: View {
                     Task { await membership.refresh() }
                 }
             } catch is CancellationError { cancelled = true }
+            catch AIError.quotaExhausted(let message) {
+                error = message
+                await membership.refresh()
+                showQuota = true
+            }
             catch { self.error = error.localizedDescription }
         }
     }

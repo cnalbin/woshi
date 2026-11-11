@@ -12,6 +12,7 @@ struct TodayView: View {
     @State private var metabolism = false
     @State private var editing: Meal?
     @State private var chooseDate = false
+    @State private var draftDay = Date()
 
     var body: some View {
         let meals = store.snapshot.meals(on: day)
@@ -26,31 +27,38 @@ struct TodayView: View {
                     }
                     activityCard
                     mealList(meals)
-                }.padding(.horizontal, 18).padding(.bottom, 18)
+                }.padding(.horizontal, Theme.gutter).padding(.vertical, 10)
             }.background(skin.background)
                 .navigationTitle(Calendar.current.isDateInToday(day) ? "今日" : "饮食记录")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(skin.background, for: .navigationBar)
-                .safeAreaInset(edge: .bottom) {
-                    HStack(spacing: 10) {
-                        Button { photo = true } label: { Label("拍照记餐", systemImage: "camera") }
+                .toolbar { ToolbarItem(placement: .principal) { BrandWordmark() } }
+                .pageActions {
+                    EqualActions {
+                        Button("拍照记餐") { photo = true }
                             .buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("meal.photo")
-                        Button { manual = true } label: {
-                            Label("手动添加", systemImage: "plus").font(.system(size: 15, weight: .semibold))
-                                .padding(.vertical, 14).padding(.horizontal, 16)
-                                .background(Theme.card, in: RoundedRectangle(cornerRadius: 14))
-                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(skin.accent.opacity(0.5), lineWidth: 1))
-                        }.accessibilityIdentifier("meal.manual")
-                    }.padding(.horizontal, 18).padding(.vertical, 10).background(skin.background)
+                        Button("手动添加") { manual = true }
+                            .buttonStyle(OutlineButtonStyle()).accessibilityIdentifier("meal.manual")
+                    }
                 }
                 .sheet(isPresented: $profileEditor) { ProfileEditor(onboarding: false) }
                 .sheet(isPresented: $chooseDate) {
                     NavigationStack {
-                        DatePicker("记录日期", selection: $day, in: ...Date(), displayedComponents: .date)
-                            .datePickerStyle(.graphical).padding().environment(\.locale, Locale(identifier: "zh_CN"))
+                        ScrollView {
+                            Card {
+                                DatePicker("记录日期", selection: $draftDay, in: ...Date(), displayedComponents: .date)
+                                    .datePickerStyle(.graphical).environment(\.locale, Locale(identifier: "zh_CN"))
+                            }.padding(Theme.gutter)
+                        }.background(skin.background)
                             .navigationTitle("选择日期").navigationBarTitleDisplayMode(.inline)
-                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { chooseDate = false } } }
-                    }.presentationDetents([.medium, .large])
+                            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭", systemImage: "xmark") { chooseDate = false }.labelStyle(.iconOnly) } }
+                            .pageActions {
+                                EqualActions {
+                                    Button("今天") { draftDay = Date() }.buttonStyle(OutlineButtonStyle())
+                                    Button("确认日期") { day = draftDay; chooseDate = false }.buttonStyle(PrimaryButtonStyle())
+                                }
+                            }
+                    }.presentationDetents([.height(520), .large])
                 }
                 .refreshable { await health.refresh(for: day) }
                 .task { await health.refresh(for: day) }
@@ -65,26 +73,20 @@ struct TodayView: View {
 
     private var dateNavigation: some View {
         HStack(spacing: 8) {
-            Button { moveDay(-1) } label: { Image(systemName: "chevron.left").frame(width: 32, height: 40) }.accessibilityLabel("前一天")
-            Button { chooseDate = true } label: {
+            Button { draftDay = day; chooseDate = true } label: {
                 HStack(spacing: 7) {
                     Text(day.formatted(.dateTime.month().day().weekday())).font(.subheadline.weight(.medium))
                     Image(systemName: "chevron.down").font(.caption2)
-                }
+                }.frame(minHeight: 44)
             }.buttonStyle(.plain)
             Spacer(minLength: 0)
-            Image(systemName: store.cloudSyncing ? "arrow.triangle.2.circlepath" : store.cloudMessage == "已同步" ? "checkmark.icloud" : "icloud")
-                .font(.caption).foregroundStyle(.secondary).accessibilityLabel(store.cloudMessage)
-            if !Calendar.current.isDateInToday(day) { Button("今天") { day = Date() }.font(.caption) }
-            Button { moveDay(1) } label: { Image(systemName: "chevron.right").frame(width: 32, height: 40) }
-                .disabled(Calendar.current.isDateInToday(day)).accessibilityLabel("后一天")
+            Label(store.cloudSyncing ? "同步中" : store.cloudMessage == "已同步" ? "已同步" : "待同步",
+                  systemImage: store.cloudMessage == "已同步" ? "checkmark.icloud" : "icloud")
+                .font(.caption).foregroundStyle(skin.accent).accessibilityLabel(store.cloudMessage)
         }
     }
-    private func moveDay(_ offset: Int) {
-        if let next = Calendar.current.date(byAdding: .day, value: offset, to: day) { day = min(next, Date()) }
-    }
     private func intakeCard(_ intake: Double) -> some View {
-        Card {
+        Card(surface: skin.membershipBackground) {
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text("今日摄入").font(.subheadline.weight(.semibold))
@@ -105,11 +107,14 @@ struct TodayView: View {
                 Spacer(minLength: 0)
                 ZStack {
                     Circle().stroke(skin.softAccent, lineWidth: 9)
-                    if let target = store.snapshot.profile?.dailyTarget {
-                        Circle().trim(from: 0, to: min(1, intake / target))
+                    if let target = store.snapshot.profile?.dailyTarget, target > 0 {
+                        let ratio = max(0, intake / target)
+                        Circle().trim(from: 0, to: min(1, ratio))
                             .stroke(skin.accent, style: StrokeStyle(lineWidth: 9, lineCap: .round)).rotationEffect(.degrees(-90))
+                        Text(ratio, format: .percent.precision(.fractionLength(0))).font(.subheadline.bold()).foregroundStyle(skin.accent)
+                    } else {
+                        Image(systemName: "fork.knife").font(.title3).foregroundStyle(skin.accent)
                     }
-                    Image(systemName: "fork.knife").font(.title3).foregroundStyle(skin.accent)
                 }.frame(width: 76, height: 76).accessibilityHidden(true)
             }
             if store.snapshot.profile == nil {
@@ -188,7 +193,7 @@ struct MetabolismCard: View {
     @Environment(\.appSkin) private var skin
     let profile: Profile
     let assessment: MetabolismAssessment?
-    let action: () -> Void
+    var action: (() -> Void)?
     private var current: MetabolismAssessment? { assessment.flatMap { $0.matches(profile) ? $0 : nil } }
     var body: some View {
         Card {
@@ -196,22 +201,18 @@ struct MetabolismCard: View {
                 Text("静息代谢估算").font(.subheadline.weight(.semibold))
                 Text("kcal/天").font(.caption2).foregroundStyle(.secondary)
                 Spacer()
-                Button(action: action) { Image(systemName: "info.circle") }.accessibilityLabel("查看代谢估算依据")
+                if let action {
+                    Button(action: action) { Image(systemName: "info.circle").frame(width: 44, height: 44) }
+                        .accessibilityLabel("查看代谢估算依据")
+                }
             }
-            HStack {
+            HStack(spacing: 8) {
                 value("公式估算", profile.formulaKcal)
-                Spacer()
-                Divider().frame(height: 42)
-                Spacer()
                 value("AI 估算", current?.response.estimatedKcal)
+                value("综合代谢", Metabolism.combined(profile: profile, assessment: current))
+                    .foregroundStyle(skin.accent).padding(6)
+                    .background(skin.softAccent, in: RoundedRectangle(cornerRadius: 10))
             }
-            HStack(alignment: .firstTextBaseline) {
-                Text("综合代谢").font(.subheadline.weight(.semibold))
-                Spacer()
-                Text("≈ \(Int(Metabolism.combined(profile: profile, assessment: current).rounded()))")
-                    .font(.system(size: 24, weight: .bold, design: .rounded))
-                Text("kcal/天").font(.caption)
-            }.foregroundStyle(skin.accent).padding(10).background(skin.softAccent, in: RoundedRectangle(cornerRadius: 12))
             Text(current == nil ? "AI 尚未分析，暂用公式估算。" : (current!.canBlend(with: profile) ? "公式 80% + AI 20% · 产品参考估算" : "两者差异较大，暂用公式，请核对资料。"))
                 .font(.caption2).foregroundStyle(.secondary)
         }
@@ -220,7 +221,7 @@ struct MetabolismCard: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label).font(.caption).foregroundStyle(.secondary)
             if let number { Text(number, format: .number.precision(.fractionLength(0))).font(.system(size: 21, weight: .semibold, design: .rounded)).monospacedDigit() }
-            else { Text("待分析").font(.title3).foregroundStyle(.secondary) }
-        }.frame(maxWidth: .infinity, alignment: .leading)
+            else { Text("待分析").font(.subheadline).foregroundStyle(.secondary) }
+        }.lineLimit(1).minimumScaleFactor(0.7).frame(maxWidth: .infinity, alignment: .center)
     }
 }

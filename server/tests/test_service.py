@@ -256,6 +256,8 @@ def test_account_isolation_and_session_revocation(fixture):
         assert client.get(photo_url, headers=alice).content == PHOTO
         assert client.get(photo_url, headers=bob).status_code == 404
         assert client.get("/v1/backup", headers=bob).json()["revision"] == 0
+        assert client.get("/v1/backup/status", headers={"Authorization": ""}).status_code == 401
+        assert client.get("/v1/backup/status", headers=bob).json() == {"revision": 0}
         assert client.put("/v1/backup", json=payload, headers=bob).json()["code"] == "MISSING_PHOTO"
         payload["snapshot"]["profile"]["dailyTarget"] = 2200
         payload["snapshot"]["meals"] = []

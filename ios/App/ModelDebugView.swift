@@ -60,7 +60,6 @@ struct ModelDebugView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("调试模型").font(.title.bold()).accessibilityAddTraits(.isHeader)
                 Picker("模式", selection: $mode) {
                     ForEach(Mode.allCases) { Text($0.label).tag($0) }
                 }.pickerStyle(.segmented).disabled(running)
@@ -102,7 +101,7 @@ struct ModelDebugView: View {
                 Text(mode == .free ? "提交的内容会发送到所选 AI 服务。" : "使用当前提示词并校验正式分析格式。")
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(18)
-        }.background(skin.background).brandedNavigation(title: "调试模型")
+        }.background(skin.background).subpageNavigation(title: "调试模型")
             .task(id: imageSelection) {
                 guard let imageSelection else { loadingPhoto = false; return }
                 loadingPhoto = true; photo = nil; photoError = ""
@@ -133,7 +132,7 @@ struct ModelDebugView: View {
                 VStack(spacing: 8) {
                     PhotosPicker(selection: $imageSelection, matching: .images) {
                         Label(photo == nil ? "上传测试图片" : "更换图片", systemImage: "photo")
-                    }.buttonStyle(.bordered)
+                    }.buttonStyle(OutlineButtonStyle()).frame(maxWidth: 150)
                     if photo != nil {
                         Button("移除图片", role: .destructive) { imageSelection = nil; photo = nil; photoError = "" }.font(.caption)
                     }
@@ -163,6 +162,11 @@ struct ModelDebugView: View {
                         Text("\(item.name) · 约 \(item.estimatedGrams.formatted()) g · \(item.estimatedKcal.formatted()) kcal")
                             .font(.subheadline.weight(.semibold))
                     }
+                }
+                if mode == .metabolism, let estimate = try? JSONDecoder().decode(MetabolismResponse.self, from: Data(result.output.utf8)) {
+                    Text("参考静息代谢").font(.caption).foregroundStyle(.secondary)
+                    Text("\(Int(estimate.estimatedKcal.rounded())) kcal/天").font(.title2.bold()).foregroundStyle(skin.accent)
+                    Text(estimate.summary).font(.subheadline)
                 }
                 DisclosureGroup("查看模型原文") { rawOutput(result) }.font(.subheadline)
             }

@@ -8,7 +8,7 @@ final class QingJiUITests: XCTestCase {
                                 "-serviceURL", "http://localhost:8787", "-uiTestPhoto"]
         app.launch()
         XCTAssertTrue(app.staticTexts["app.build"].waitForExistence(timeout: 8))
-        XCTAssertEqual(app.staticTexts["app.build"].label, "版本 0.8.0 · 构建 10")
+        XCTAssertEqual(app.staticTexts["app.build"].label, "版本 0.9.0 · 构建 11")
         capture("00-注册与版本信息")
         login("registered-user", registering: true, in: app)
         let profile = app.buttons["profile.open"]
@@ -21,6 +21,7 @@ final class QingJiUITests: XCTestCase {
         start.tap()
         let manual = app.buttons["meal.manual"]
         XCTAssertTrue(manual.waitForExistence(timeout: 10))
+        verifyActionPair(app.buttons["meal.photo"], manual)
         capture("02-今日首页")
         manual.tap()
         let addFood = app.buttons["food.add"]
@@ -49,6 +50,16 @@ final class QingJiUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(manual.waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["intake.total"].label, "125", "Record must survive a real process restart")
+        app.terminate()
+        app.launchArguments += ["-qingji.appearanceMode", "dark"]
+        app.launch()
+        XCTAssertTrue(manual.waitForExistence(timeout: 10))
+        verifyActionPair(app.buttons["meal.photo"], manual)
+        capture("04b-今日深色")
+        app.terminate()
+        app.launchArguments.removeLast(2)
+        app.launch()
+        XCTAssertTrue(manual.waitForExistence(timeout: 10))
         app.tabBars.buttons["我的"].tap()
         XCTAssertTrue(app.staticTexts["app.build"].waitForExistence(timeout: 5))
         capture("05-我的")
@@ -209,6 +220,9 @@ final class QingJiUITests: XCTestCase {
 
     private func verifyPhotoCancellationAndReview(in app: XCUIApplication) {
         app.buttons["meal.photo"].tap()
+        XCTAssertTrue(app.buttons["photo.library"].waitForExistence(timeout: 8))
+        verifyActionPair(app.buttons["photo.camera"], app.buttons["photo.library"])
+        capture("11a-拍照选图")
         let start = app.buttons["photo.start"]
         XCTAssertTrue(start.waitForExistence(timeout: 10))
         reveal(start, in: app)
@@ -244,7 +258,7 @@ final class QingJiUITests: XCTestCase {
         review.tap()
         XCTAssertTrue(app.buttons["meal.save"].waitForExistence(timeout: 5))
         capture("13-AI食物核对")
-        app.navigationBars["确认这餐"].buttons["取消"].tap()
+        app.navigationBars["核对食物与份量"].buttons["取消"].tap()
         app.navigationBars["拍照记餐"].buttons["关闭"].tap()
         XCTAssertEqual(app.staticTexts["intake.total"].label, "125", "Unconfirmed AI results must not be saved")
     }
@@ -275,11 +289,17 @@ final class QingJiUITests: XCTestCase {
         let mode = app.buttons["service.mode"]
         XCTAssertTrue(mode.waitForExistence(timeout: 8))
         if !registering { mode.tap() }
-        let address = app.textFields["service.address"]
-        XCTAssertTrue(address.waitForExistence(timeout: 8))
-        if address.value as? String != "http://localhost:8787" {
-            address.tap()
-            address.typeText("http://localhost:8787")
+        if registering {
+            let addressEntry = app.buttons["service.address.open"]
+            reveal(addressEntry, in: app)
+            addressEntry.tap()
+            let address = app.textFields["service.address"]
+            XCTAssertTrue(address.waitForExistence(timeout: 8))
+            XCTAssertEqual(address.value as? String, "http://localhost:8787")
+            capture("00b-服务器地址")
+            app.buttons["service.address.save"].tap()
+        } else {
+            capture("00c-登录")
         }
         let username = app.textFields["service.username"]
         username.tap()
@@ -299,6 +319,14 @@ final class QingJiUITests: XCTestCase {
         submit.tap()
         let signedIn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: submit)
         XCTAssertEqual(XCTWaiter.wait(for: [signedIn], timeout: 15), .completed, "NAS account login failed")
+    }
+
+    private func verifyActionPair(_ first: XCUIElement, _ second: XCUIElement) {
+        XCTAssertTrue(first.exists && second.exists)
+        XCTAssertEqual(first.frame.width, second.frame.width, accuracy: 1)
+        XCTAssertEqual(first.frame.height, 50, accuracy: 1)
+        XCTAssertEqual(second.frame.height, 50, accuracy: 1)
+        XCTAssertEqual(second.frame.minX - first.frame.maxX, 12, accuracy: 1)
     }
 
     private func signOut(in app: XCUIApplication) {

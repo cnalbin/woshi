@@ -79,6 +79,10 @@ class Storage:
                     "snapshot": snapshot, "photos": [{"filename": r["filename"], "sha256": r["sha256"]} for r in refs
                                                       if (self.directory / r["sha256"]).is_file()]}
 
+    def revision(self) -> int:
+        with self.engine.connect() as conn:
+            return conn.execute(select(states.c.revision).where(states.c.owner == self.owner)).scalar_one()
+
     def write(self, backup: BackupWrite) -> dict:
         body = backup.snapshot.model_dump(mode="json")
         rows = [{"owner": self.owner, "record_id": "profile", "kind": "profile", "payload": body["profile"]}]

@@ -33,10 +33,14 @@ struct Card<Content: View>: View {
 struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.appSkin) private var skin
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
+
     func makeBody(configuration: Configuration) -> some View {
+        let dark = colorScheme == .dark
         configuration.label.actionLabel()
-            .background(skin.buttonFill.opacity(!isEnabled ? 0.35 : configuration.isPressed ? 0.7 : 1), in: RoundedRectangle(cornerRadius: Theme.actionRadius))
-            .foregroundStyle(.white)
+            .background((dark ? skin.accent : skin.buttonFill).opacity(!isEnabled ? 0.35 : configuration.isPressed ? 0.7 : 1),
+                        in: RoundedRectangle(cornerRadius: Theme.actionRadius))
+            .foregroundStyle(dark ? Color.black.opacity(0.85) : .white)
     }
 }
 

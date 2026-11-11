@@ -65,14 +65,17 @@ struct TrendsView: View {
         HStack {
             Button { move(-1) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }.accessibilityLabel("上一时段")
             Spacer(minLength: 4)
-            Text(report.title).font(.subheadline.weight(.semibold)).accessibilityIdentifier("trends.range")
+            VStack(spacing: 4) {
+                Text(report.title).font(.headline).accessibilityIdentifier("trends.range")
+                Text(anchor.formatted(.dateTime.year().month().day())).font(.caption2).foregroundStyle(.secondary)
+            }
             Spacer(minLength: 4)
             Button { move(1) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
                 .disabled(report.interval.end > Date()).accessibilityLabel("下一时段")
         }
         HStack(spacing: 10) {
-            metric("日均摄入", number(report.intakeAverage), color: skin.accent)
-            metric(activityOnly ? "日均活动" : "日均总消耗", number(activityOnly ? report.activityAverage : report.totalAverage), color: Theme.orange)
+            metric("日均摄入", number(report.intakeAverage), color: skin.accent, unit: "kcal")
+            metric(activityOnly ? "日均活动" : "日均总消耗", number(activityOnly ? report.activityAverage : report.totalAverage), color: Theme.orange, unit: "kcal")
             metric("记录天数", "\(report.recordedDays)/\(report.elapsedDays)", color: .primary)
         }
         Card {
@@ -147,12 +150,13 @@ struct TrendsView: View {
     }
     private func move(_ amount: Int) { anchor = calendar.date(byAdding: period.component, value: amount, to: anchor) ?? anchor }
     private func number(_ value: Double?) -> String { value.map { String(Int($0.rounded())) } ?? "—" }
-    private func metric(_ title: String, _ value: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private func metric(_ title: String, _ value: String, color: Color, unit: String? = nil) -> some View {
+        VStack(spacing: 5) {
             Text(title).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
             Text(value).font(.system(size: 23, weight: .bold, design: .rounded)).foregroundStyle(color)
                 .lineLimit(1).minimumScaleFactor(0.65).monospacedDigit()
-        }.frame(maxWidth: .infinity, alignment: .leading).padding(12)
+            if let unit { Text(unit).font(.caption2).foregroundStyle(.secondary) }
+        }.frame(maxWidth: .infinity, minHeight: 60, alignment: .top).padding(8)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 16))
     }
     private func legend(_ label: String, _ color: Color) -> some View {

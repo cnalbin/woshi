@@ -39,7 +39,7 @@ struct ModelDebugView: View {
 
     @State private var mode = Mode.free
     @State private var freePrompt = ""
-    @State private var text = ""
+    @State private var inputs: [Mode: String] = [:]
     @State private var imageSelection: PhotosPickerItem?
     @State private var photo: Data?
     @State private var loadingPhoto = false
@@ -50,6 +50,10 @@ struct ModelDebugView: View {
     @State private var result: Result?
     @State private var error = ""
 
+    private var text: String { inputs[mode, default: ""] }
+    private var testInput: Binding<String> {
+        Binding(get: { text }, set: { inputs[mode] = String($0.prefix(4000)) })
+    }
     private var hasText: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     private var usesPhoto: Bool { mode != .metabolism && photo != nil }
     private var canRun: Bool {
@@ -62,25 +66,34 @@ struct ModelDebugView: View {
             VStack(alignment: .leading, spacing: 16) {
                 PageSegments(selection: $mode, options: Mode.allCases.map { ($0.label, $0) })
                     .frame(height: 34).accessibilityLabel("调试模式").disabled(running)
-                Card { LabeledContent("模型", value: model.isEmpty ? "待填写" : model) }
+                Card { LabeledContent { Text(model.isEmpty ? "待填写" : model) } label: {
+                    Label("模型", systemImage: "cpu")
+                } }
                 VStack(alignment: .leading, spacing: 12) {
                     if mode == .free {
                         Card {
-                            Text("本次系统提示词（可选）").font(.caption).foregroundStyle(.secondary)
-                            TextField("输入要测试的系统提示词", text: $freePrompt, axis: .vertical)
-                                .lineLimit(3...8)
-                                .onChange(of: freePrompt) { _, value in
-                                    if value.count > 6000 { freePrompt = String(value.prefix(6000)) }
-                                }
+                            DisclosureGroup {
+                                TextField("输入要测试的系统提示词", text: $freePrompt, axis: .vertical)
+                                    .lineLimit(3...8).padding(.top, 8)
+                                    .onChange(of: freePrompt) { _, value in
+                                        if value.count > 6000 { freePrompt = String(value.prefix(6000)) }
+                                    }
+                            } label: {
+                                Label("系统提示词（可选）", systemImage: "doc.text").font(.subheadline)
+                            }
                         }
                     }
-                    if mode != .metabolism { photoInput }
                     Card {
-                        TextField(mode == .meal ? "补充说明（可选）" : "输入测试文字", text: $text, axis: .vertical)
+                        Label(mode == .metabolism ? "测试资料" : "测试内容", systemImage: mode == .metabolism ? "person" : "pencil")
+                            .font(.subheadline.weight(.semibold)).foregroundStyle(skin.accent)
+                        TextField(mode == .meal ? "补充说明（可选）" : "输入测试文字", text: testInput, axis: .vertical)
                             .lineLimit(3...8).accessibilityIdentifier("debug.text")
-                            .onChange(of: text) { _, value in if value.count > 4000 { text = String(value.prefix(4000)) } }
+                            .padding(10).background(skin.background, in: RoundedRectangle(cornerRadius: 10))
                         if mode == .metabolism {
-                            Button("填入示例资料") { text = #"{"sex":"male","age":30,"heightCM":175,"weightKG":70}"# }
+                            Button("填入示例资料") { inputs[.metabolism] = #"{"sex":"male","age":30,"heightCM":175,"weightKG":70}"# }
+                                .font(.subheadline.weight(.semibold)).frame(minHeight: 44)
+                        } else {
+                            photoInput
                         }
                     }
                 }.disabled(running)
@@ -101,6 +114,7 @@ struct ModelDebugView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }.padding(18)
         }.background(skin.background).subpageNavigation(title: "调试模型")
+            .onChange(of: mode) { _, _ in result = nil; error = "" }
             .task(id: imageSelection) {
                 guard let imageSelection else { loadingPhoto = false; return }
                 loadingPhoto = true; photo = nil; photoError = ""

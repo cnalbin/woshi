@@ -324,8 +324,11 @@ struct SettingsView: View {
 }
 
 struct ServiceSettingsView: View {
+    private enum Field: Hashable { case username, password, confirmation }
+
     @Environment(\.appSkin) private var skin
     @EnvironmentObject private var session: AccountSession
+    @FocusState private var focusedField: Field?
     var store: AppStore? = nil
     @State private var address = ""
     @State private var username = ""
@@ -377,16 +380,19 @@ struct ServiceSettingsView: View {
                         accountField("用户名") {
                             TextField("请输入用户名", text: $username)
                                 .textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                .focused($focusedField, equals: .username).submitLabel(.next)
+                                .onSubmit { focusedField = .password }
                                 .accessibilityIdentifier("service.username")
                         }
                         accountPassword("密码", placeholder: "请输入密码", value: $password, visible: $showPassword,
-                                        identifier: "service.password", contentType: registering ? .oneTimeCode : .password)
+                                        identifier: "service.password", field: .password)
                         if registering {
                             accountPassword("确认密码", placeholder: "请再次输入密码", value: $confirmPassword, visible: $showConfirmation,
-                                            identifier: "service.confirm", contentType: .oneTimeCode)
+                                            identifier: "service.confirm", field: .confirmation)
                         }
                     }
                     Button {
+                        focusedField = nil
                         editAddress = true
                     } label: {
                         Card {
@@ -407,11 +413,17 @@ struct ServiceSettingsView: View {
         }.background(skin.background).scrollDismissesKeyboard(.interactively)
             .navigationTitle(session.record == nil ? "" : "NAS 账号").navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完成") { focusedField = nil }.accessibilityIdentifier("service.keyboard.done")
+                }
+            }
             .pageActions {
                 if session.record != nil {
                     Button("退出登录", role: .destructive) { confirmLogout = true }
                         .buttonStyle(OutlineButtonStyle()).accessibilityIdentifier("service.logout")
-                } else {
+                } else if focusedField == nil {
                     VStack(spacing: 2) {
                         Button(registering ? "注册并开始" : "登录") { login() }
                             .buttonStyle(PrimaryButtonStyle()).disabled(working || address.isEmpty || username.isEmpty || password.isEmpty || (registering && confirmPassword.isEmpty))
@@ -452,13 +464,17 @@ struct ServiceSettingsView: View {
     }
 
     private func accountPassword(_ title: String, placeholder: String, value: Binding<String>, visible: Binding<Bool>,
-                                 identifier: String, contentType: UITextContentType) -> some View {
-        accountField(title) {
+                                 identifier: String, field: Field) -> some View {
+        let next = field == .password && registering
+        return accountField(title) {
             HStack {
                 Group {
                     if visible.wrappedValue { TextField(placeholder, text: value) }
                     else { SecureField(placeholder, text: value) }
-                }.textContentType(contentType).textInputAutocapitalization(.never).autocorrectionDisabled()
+                }.textContentType(registering ? .oneTimeCode : .password)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .focused($focusedField, equals: field).submitLabel(next ? .next : .done)
+                    .onSubmit { focusedField = next ? .confirmation : nil }
                     .accessibilityIdentifier(identifier)
                 Button { visible.wrappedValue.toggle() } label: {
                     Image(systemName: visible.wrappedValue ? "eye" : "eye.slash").frame(width: 44, height: 44)

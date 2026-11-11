@@ -312,14 +312,15 @@ final class QingJiUITests: XCTestCase {
         let password = app.secureTextFields["service.password"]
         reveal(password, in: app)
         password.tap()
-        password.typeText("test-password-only")
+        password.typeText(registering ? "test-password-only" : "test-password-only\n")
         if registering {
             let confirm = app.secureTextFields["service.confirm"]
             reveal(confirm, in: app)
             confirm.tap()
-            confirm.typeText("test-password-only")
+            confirm.typeText("test-password-only\n")
         }
         let submit = app.buttons["service.save"]
+        XCTAssertTrue(submit.waitForExistence(timeout: 5))
         reveal(submit, in: app)
         submit.tap()
         let signedIn = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: submit)

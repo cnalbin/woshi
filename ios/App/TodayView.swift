@@ -92,7 +92,8 @@ struct TodayView: View {
                     Text("今日摄入").font(.subheadline.weight(.semibold))
                     HStack(alignment: .firstTextBaseline, spacing: 5) {
                         Text("\(Int(intake.rounded()))").font(.system(size: 35, weight: .bold, design: .rounded))
-                            .minimumScaleFactor(0.6).monospacedDigit().accessibilityIdentifier("intake.total")
+                            .foregroundStyle(skin.accent).minimumScaleFactor(0.6).monospacedDigit()
+                            .accessibilityIdentifier("intake.total")
                         Text("kcal").font(.caption).foregroundStyle(.secondary)
                     }
                     if let profile = store.snapshot.profile {

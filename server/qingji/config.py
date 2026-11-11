@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     max_concurrent_requests: int = Field(default=3, ge=1, le=20)
     # Existing single-user backup namespace, which can be assigned to one account.
     ai_allowed_hosts: str = "api.deepseek.com,api.openai.com"
-    membership_enabled: bool = False
+    membership_enabled: bool = True
     apple_subscription_product: str = "com.cnalbin.qingji.membership.monthly"
     apple_bundle_id: str = "com.cnalbin.qingji"
     apple_environment: Literal["Production", "Sandbox"] = "Production"

@@ -124,6 +124,7 @@ final class QingJiUITests: XCTestCase {
         XCTAssertTrue(entry.waitForExistence(timeout: 5))
         entry.tap()
         XCTAssertTrue(app.navigationBars["轻记会员"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.tabBars.buttons["今日"].exists, "Membership subpages should match the standalone design")
         capture("15-开通会员")
         app.navigationBars.buttons.firstMatch.tap()
         let builtin = app.buttons["model.builtin"]
@@ -176,6 +177,15 @@ final class QingJiUITests: XCTestCase {
         XCTAssertTrue(app.segmentedControls.buttons["拍照"].waitForExistence(timeout: 5))
         app.segmentedControls.buttons["拍照"].tap()
         capture("23-调试模型")
+        app.segmentedControls.buttons["代谢"].tap()
+        let sample = app.buttons["填入示例资料"]
+        reveal(sample, in: app)
+        sample.tap()
+        let run = app.buttons["debug.run"]
+        reveal(run, in: app)
+        run.tap()
+        XCTAssertTrue(app.staticTexts["格式校验通过"].waitForExistence(timeout: 15))
+        capture("23b-模型调试结果")
         app.navigationBars.buttons.firstMatch.tap()
         let balance = app.buttons["model.balance"]
         reveal(balance, in: app)

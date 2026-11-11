@@ -6,7 +6,10 @@ struct MembershipCard: View {
     let active: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("轻记会员", systemImage: "crown.fill").font(.headline).symbolRenderingMode(.multicolor)
+            HStack(spacing: 8) {
+                Image(systemName: "crown.fill").foregroundStyle(.yellow)
+                Text("轻记会员")
+            }.font(.headline)
             Text("每周期 100 次 AI 分析").font(.subheadline).foregroundStyle(.secondary)
             NavigationLink {
                 if active { MembershipManagementView() } else { MembershipPurchaseView() }
@@ -22,10 +25,10 @@ private struct MembershipBackdrop: View {
     @Environment(\.appSkin) private var skin
 
     var body: some View {
-        RoundedRectangle(cornerRadius: 18).fill(skin.accent.opacity(0.13))
+        RoundedRectangle(cornerRadius: 18).fill(skin.membershipBackground)
             .overlay(alignment: .trailing) {
-                Image(systemName: "bowl.fill").font(.system(size: 70)).foregroundStyle(skin.accent.opacity(0.10))
-                    .rotationEffect(.degrees(-14)).padding(.trailing, 18)
+                Image("BrandIcon").resizable().frame(width: 78, height: 78).opacity(0.12)
+                    .clipShape(RoundedRectangle(cornerRadius: 22)).rotationEffect(.degrees(-14)).padding(.trailing, 18)
             }.accessibilityHidden(true)
     }
 }
@@ -69,6 +72,7 @@ struct MembershipPurchaseView: View {
             }.padding(18)
         }.background(skin.background)
             .navigationTitle("轻记会员").navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .tabBar)
             .task { await membership.loadProduct() }
             .onChange(of: membership.status?.active) { _, active in if active == true { dismiss() } }
             .safeAreaInset(edge: .bottom) {
@@ -103,7 +107,10 @@ struct MembershipManagementView: View {
             VStack(spacing: 16) {
                 if let status = membership.status, status.active {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label("会员有效", systemImage: "crown.fill").font(.title3.bold()).symbolRenderingMode(.multicolor)
+                        HStack(spacing: 8) {
+                            Image(systemName: "crown.fill").foregroundStyle(.yellow)
+                            Text("会员有效")
+                        }.font(.title3.bold())
                         if let date = status.renewalDate {
                             Text(status.willRenew == false ? "到期日期 \(date)" : "本周期截止 \(date)")
                                 .font(.subheadline).foregroundStyle(.secondary)
@@ -121,13 +128,13 @@ struct MembershipManagementView: View {
                 if let message = membership.message { Text(message).font(.footnote).foregroundStyle(.secondary) }
             }.padding(18)
         }.background(skin.background).navigationTitle("会员管理").navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .tabBar)
             .safeAreaInset(edge: .bottom) {
                 if membership.status?.active == true {
                     VStack(spacing: 10) {
-                        Button { manage = true } label: { Text("管理订阅").frame(maxWidth: .infinity).padding(5) }
-                            .buttonStyle(.bordered)
-                        Button { Task { await membership.restore() } } label: { Text("恢复购买").frame(maxWidth: .infinity).padding(5) }
-                            .buttonStyle(.bordered).disabled(membership.status?.purchaseEnabled != true || membership.busy)
+                        Button("管理订阅") { manage = true }.buttonStyle(OutlineButtonStyle())
+                        Button("恢复购买") { Task { await membership.restore() } }
+                            .buttonStyle(OutlineButtonStyle()).disabled(membership.status?.purchaseEnabled != true || membership.busy)
                     }.padding(18).background(skin.background)
                 }
             }
@@ -138,7 +145,7 @@ struct MembershipManagementView: View {
 
     private func entry(_ title: String, icon: String) -> some View {
         HStack {
-            Label(title, systemImage: icon)
+            Label { Text(title).foregroundStyle(.primary) } icon: { Image(systemName: icon).foregroundStyle(skin.accent) }
             Spacer()
             Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
         }.frame(minHeight: 32).contentShape(Rectangle())
@@ -177,7 +184,7 @@ struct BuiltInModelView: View {
             VStack(spacing: 16) {
                 Card {
                     HStack {
-                        Image(systemName: "fish.fill").font(.title2).foregroundStyle(.blue)
+                        Image("DeepSeekIcon").resizable().scaledToFit().frame(width: 30, height: 30)
                         Text("DeepSeek Flash").font(.headline)
                         Spacer()
                         if membership.status?.model == "builtIn" {
@@ -192,9 +199,9 @@ struct BuiltInModelView: View {
                 Text("支持的任务").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6)
                 Card {
-                    Label("拍照识别", systemImage: "camera")
+                    Label { Text("拍照识别") } icon: { Image(systemName: "camera").foregroundStyle(skin.accent) }
                     Divider()
-                    Label("静息代谢", systemImage: "waveform.path.ecg")
+                    Label { Text("静息代谢") } icon: { Image(systemName: "waveform.path.ecg").foregroundStyle(skin.accent) }
                 }
                 Label("确认食物信息后重新估算，仍计为一次分析", systemImage: "info.circle")
                     .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
@@ -202,6 +209,7 @@ struct BuiltInModelView: View {
                 if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
             }.padding(18)
         }.background(skin.background).navigationTitle("内置 DeepSeek").navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .tabBar)
             .safeAreaInset(edge: .bottom) {
                 NavigationLink {
                     if membership.status?.active == true { MembershipManagementView() }
@@ -238,6 +246,7 @@ struct CustomModelEntry: View {
                     NavigationLink("开通会员使用") { MembershipPurchaseView() }.buttonStyle(PrimaryButtonStyle())
                 }.padding(18)
             }.background(skin.background).navigationTitle("自定义模型").navigationBarTitleDisplayMode(.inline)
+                .toolbar(.hidden, for: .tabBar)
                 .task { await membership.refresh() }
         }
     }

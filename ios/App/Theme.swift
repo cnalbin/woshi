@@ -32,6 +32,19 @@ struct PrimaryButtonStyle: ButtonStyle {
     }
 }
 
+struct OutlineButtonStyle: ButtonStyle {
+    @Environment(\.appSkin) private var skin
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.font(.system(size: 15, weight: .semibold))
+            .frame(maxWidth: .infinity).padding(.vertical, 13)
+            .background(skin.accent.opacity(configuration.isPressed ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 13))
+            .overlay(RoundedRectangle(cornerRadius: 13).stroke(skin.accent.opacity(isEnabled ? 1 : 0.25), lineWidth: 1))
+            .foregroundStyle(skin.accent.opacity(isEnabled ? 1 : 0.4))
+    }
+}
+
 struct BrandWordmark: View {
     @Environment(\.appSkin) private var skin
     var compact = true
@@ -48,6 +61,7 @@ struct BrandWordmark: View {
 extension View {
     func brandedNavigation(title: String) -> some View {
         navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .tabBar)
             .toolbar { ToolbarItem(placement: .principal) { BrandWordmark() } }
     }
 }

@@ -34,6 +34,7 @@ def reply(result, reason="stop"):
 @pytest.fixture
 def fixture(tmp_path):
     def create(provider=None, enable_legacy_token=True, **kwargs):
+        kwargs.setdefault("membership_enabled", False)
         settings = Settings(app_access_token=TOKEN, enable_legacy_token=enable_legacy_token,
                             deepseek_api_key="fake-key", photo_directory=tmp_path / "photos",
                             owner_id=uuid4().hex, **kwargs)

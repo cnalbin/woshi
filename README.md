@@ -67,7 +67,7 @@ App 在前台保存后自动同步，每30秒检查远端更新，换机登录�
 
 新版「我的」提供会员中心、内置 DeepSeek、自定义模型及外观入口。免费账号累计有 100 次内置 AI 分析，订阅账号每个 Apple 订阅周期有 100 次。拍照待确认和补充后的最终估算合计一次。失败或取消可重试，重复提交同一已完成的请求复用结果。自定义模型走会员自己的 API 账户。
 
-更新后端时保留原 MySQL 及照片目录。将 `server/.env` 中的 `MEMBERSHIP_ENABLED` 设为 `true` 可启用免费额度及会员权限。订阅准备完成前保持 Apple 验证配置为空，此时可查看页面和体验免费额度。已有的自定义模型配置在开通后可以继续使用。米白经典皮肤及系统、浅色和深色模式可直接使用，橙色、蓝色皮肤可预览，应用皮肤需要会员。
+更新后端时保留原 MySQL 及照片目录。新版默认启用免费额度及会员权限，`server/.env` 的 `MEMBERSHIP_ENABLED=true`。订阅准备完成前保持 Apple 验证配置为空，此时可查看页面和体验免费额度。已有的自定义模型配置在开通后可以继续使用。米白经典皮肤及系统、浅色和深色模式可直接使用，橙色、蓝色皮肤可预览，应用皮肤需要会员。管理员可显式设置 `MEMBERSHIP_ENABLED=false` 临时兼容旧的无会员模式。
 
 正式开通前，在 App Store Connect 为 `com.cnalbin.qingji` 创建月度自动续期订阅。默认商品 ID 为 `com.cnalbin.qingji.membership.monthly`，计划月费 ¥5.90，实际价格以 StoreKit 返回为准。在 `server/.env` 设置 `APPLE_APP_ID`、`APPLE_ROOT_CERTIFICATES` 和商品 ID（如与默认值不同）。证书路径使用容器内可读的绝对路径。通过 Apple PKI 获取根证书。在 App Store Connect 将服务端通知版本设为 V2，通知地址指向 `<后端 HTTPS 地址>/v1/membership/apple/notifications`。测试用后端设 `APPLE_ENVIRONMENT=Sandbox`，使用独立测试数据库。用与 App Store Connect 匹配的 App 签名和 Bundle ID 测试购买、恢复、续期及退款。
 

@@ -30,6 +30,12 @@ enum AppSkin: String, CaseIterable, Identifiable, Codable {
         }
     }
     var softAccent: Color { accent.opacity(0.08) }
+    var membershipBackground: Color {
+        self == .classic
+            ? adaptive(light: UIColor(red: 0.91, green: 0.95, blue: 0.83, alpha: 1),
+                       dark: UIColor(red: 0.11, green: 0.18, blue: 0.10, alpha: 1))
+            : softAccent
+    }
     var buttonFill: Color {
         switch self {
         case .classic: Theme.green
@@ -112,9 +118,13 @@ struct AppearanceView: View {
                         .accessibilityIdentifier("skin.\(theme.rawValue)")
                 }
                 Card {
-                    Picker(selection: $mode) {
-                        ForEach(AppearanceMode.allCases) { option in Text(option.label).tag(option) }
-                    } label: { Label("显示模式", systemImage: "moon") }
+                    HStack {
+                        Label("显示模式", systemImage: "moon").font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Picker("显示模式", selection: $mode) {
+                            ForEach(AppearanceMode.allCases) { option in Text(option.label).tag(option) }
+                        }.labelsHidden().pickerStyle(.menu)
+                    }
                 }.padding(.top, 8)
             }.padding(18)
         }.background(skin.background).brandedNavigation(title: "外观")
@@ -165,7 +175,7 @@ private struct SkinPreviewView: View {
                         Text("11月11日").foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Image(systemName: "bowl.fill").font(.largeTitle).foregroundStyle(theme.accent)
+                    Image("BrandIcon").resizable().frame(width: 42, height: 42).clipShape(RoundedRectangle(cornerRadius: 12))
                 }.padding(.horizontal, 7)
                 Card {
                     HStack {
@@ -195,6 +205,7 @@ private struct SkinPreviewView: View {
             }.padding(12).background(theme.softAccent, in: RoundedRectangle(cornerRadius: 24)).padding(18)
         }.background(theme.background)
             .navigationTitle("皮肤预览").navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .tabBar)
             .safeAreaInset(edge: .bottom) {
                 Group {
                     if unlocked {

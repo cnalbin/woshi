@@ -304,7 +304,11 @@ struct SettingsView: View {
     }
     private func settingsRow(_ title: String, symbol: String, detail: String, iconColor: Color? = nil, locked: Bool = false) -> some View {
         HStack(spacing: 11) {
-            Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(iconColor ?? skin.accent).frame(width: 25)
+            if title == "内置 DeepSeek" {
+                Image("DeepSeekIcon").resizable().scaledToFit().frame(width: 25, height: 25)
+            } else {
+                Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(iconColor ?? skin.accent).frame(width: 25)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
                 if !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1) }

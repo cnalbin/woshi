@@ -205,7 +205,7 @@ private struct PromptEditor: View {
             Text(message ?? "结果格式由轻记统一校验").font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 10) {
                 Button("恢复默认") { selectedText.wrappedValue = mode == 0 ? defaultMeal : defaultMetabolism }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(OutlineButtonStyle())
                 Button(saving ? "正在保存…" : "保存提示词") { Task { await save() } }.buttonStyle(PrimaryButtonStyle())
             }.disabled(saving)
         }.padding(18).background(skin.background).brandedNavigation(title: "编辑提示词")
@@ -263,7 +263,7 @@ private struct ModelBalanceView: View {
                 Text("查询余额").font(.title.bold()).accessibilityAddTraits(.isHeader)
                 Card {
                     HStack(spacing: 12) {
-                        Image(systemName: "fish.fill").font(.title2).foregroundStyle(.blue)
+                        Image("DeepSeekIcon").resizable().scaledToFit().frame(width: 30, height: 30)
                         VStack(alignment: .leading, spacing: 4) {
                             Text(URLComponents(string: configuration.baseURL)?.host == "api.deepseek.com" ? "DeepSeek" : "模型服务商").font(.headline)
                             Text("个人 API 账号").font(.subheadline).foregroundStyle(.secondary)
@@ -288,7 +288,7 @@ private struct ModelBalanceView: View {
                 Button { Task { await refresh() } } label: {
                     Label(checking ? "正在查询…" : "刷新余额", systemImage: "arrow.clockwise")
                         .frame(maxWidth: .infinity).padding(.vertical, 6)
-                }.buttonStyle(.bordered).disabled(checking)
+                }.buttonStyle(OutlineButtonStyle()).disabled(checking)
             }.padding(18)
         }.background(skin.background).brandedNavigation(title: "查询余额")
             .task { await refresh() }

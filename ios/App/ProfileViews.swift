@@ -90,7 +90,9 @@ struct ProfileEditor: View {
 }
 
 struct MetabolismDetailView: View {
+    @Environment(\.appSkin) private var skin
     @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var membership: MembershipModel
     @Environment(\.dismiss) private var dismiss
     @State private var running = false
     @State private var progress = AnalysisProgress(stage: "uploading", message: "正在发送个人资料")
@@ -143,7 +145,7 @@ struct MetabolismDetailView: View {
                         }
                     }
                 }.padding(18)
-            }.background(Theme.background).navigationTitle("代谢分析").navigationBarTitleDisplayMode(.inline)
+            }.background(skin.background).navigationTitle("代谢分析").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
                 .onDisappear { cancel() }
                 .sheet(isPresented: $consent) {
@@ -153,7 +155,7 @@ struct MetabolismDetailView: View {
                     }
                 }
                 .sheet(isPresented: $showModel) {
-                    NavigationStack { ModelSettingsView().toolbar {
+                    NavigationStack { CustomModelEntry().toolbar {
                         ToolbarItem(placement: .confirmationAction) { Button("完成") { showModel = false } }
                     } }
                 }
@@ -177,6 +179,7 @@ struct MetabolismDetailView: View {
                 }
                 try Task.checkCancellation()
                 try store.saveAssessment(response, for: profile)
+                Task { await membership.refresh() }
             } catch is CancellationError { cancelled = true } catch { self.error = error.localizedDescription }
         }
     }
@@ -184,9 +187,11 @@ struct MetabolismDetailView: View {
 }
 
 struct SettingsView: View {
+    @Environment(\.appSkin) private var skin
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var health: HealthService
     @EnvironmentObject private var session: AccountSession
+    @EnvironmentObject private var membership: MembershipModel
     @State private var editProfile = false
     @State private var metabolism = false
     @State private var showConsent = false
@@ -206,6 +211,32 @@ struct SettingsView: View {
                             Spacer()
                         }
                     }
+                    MembershipCard(active: membership.status?.active == true)
+                    Card {
+                        Text("AI 模型").font(.caption).foregroundStyle(.secondary)
+                        NavigationLink { BuiltInModelView() } label: {
+                            settingsRow("内置 DeepSeek", symbol: "cube", detail: quotaLabel)
+                        }.accessibilityIdentifier("model.builtin")
+                        Divider()
+                        NavigationLink { CustomModelEntry() } label: {
+                            let member = membership.status?.active == true || membership.status?.enabled == false
+                            settingsRow("自定义模型", symbol: member ? "chevron.left.forwardslash.chevron.right" : "lock",
+                                        detail: membership.status?.model == "custom" ? "当前使用" : member ? "" : "会员专享")
+                        }.accessibilityIdentifier("model.open")
+                    }.buttonStyle(.plain)
+                    Card {
+                        NavigationLink { AppearanceView() } label: {
+                            settingsRow("外观", symbol: "paintbrush", detail: "")
+                        }.accessibilityIdentifier("appearance.open")
+                        Divider()
+                        NavigationLink { SyncView() } label: {
+                            settingsRow("数据同步", symbol: "icloud", detail: store.cloudMessage == "已同步" ? "已同步" : "查看状态")
+                        }.accessibilityIdentifier("backup.open")
+                        Divider()
+                        Button { Task { await health.connect() } } label: {
+                            settingsRow("苹果健康", symbol: "heart", detail: health.hasRequested ? "检查权限" : "连接")
+                        }
+                    }.buttonStyle(.plain)
                     Card {
                         HStack {
                             Text("个人资料").font(.headline)
@@ -223,7 +254,7 @@ struct SettingsView: View {
                             HStack {
                                 Label("每日摄入目标", systemImage: "scope").font(.subheadline)
                                 Spacer()
-                                Text("\(Int(profile.dailyTarget)) kcal").font(.subheadline.weight(.semibold)).foregroundStyle(Theme.green)
+                                Text("\(Int(profile.dailyTarget)) kcal").font(.subheadline.weight(.semibold)).foregroundStyle(skin.accent)
                             }
                         } else {
                             Text("填写基本信息，查看公式、AI 与综合代谢估算。").font(.caption).foregroundStyle(.secondary)
@@ -236,22 +267,9 @@ struct SettingsView: View {
                         }.accessibilityIdentifier("metabolism.open")
                     }
                     Card {
-                        Text("连接与同步").font(.headline)
-                        NavigationLink { ModelSettingsView() } label: {
-                            settingsRow("AI 模型设置", symbol: "sparkles", detail: "服务、模型与密钥")
-                        }.accessibilityIdentifier("model.open")
-                        Divider()
                         NavigationLink { ServiceSettingsView(store: store) } label: {
                             settingsRow("NAS 账号", symbol: "person.crop.circle", detail: session.record?.username ?? "登录")
                         }.accessibilityIdentifier("service.open")
-                        Divider()
-                        NavigationLink { SyncView() } label: {
-                            settingsRow("数据同步", symbol: "icloud", detail: store.cloudMessage == "已同步" ? "已同步" : "查看状态")
-                        }.accessibilityIdentifier("backup.open")
-                        Divider()
-                        Button { Task { await health.connect() } } label: {
-                            settingsRow("苹果健康", symbol: "heart", detail: health.hasRequested ? "检查权限" : "连接")
-                        }
                     }.buttonStyle(.plain)
                     Card {
                         Text("隐私与偏好").font(.headline)
@@ -268,8 +286,8 @@ struct SettingsView: View {
                     Text("记录支持离线保存，联网后随账号同步。\n热量与代谢均为估算值，仅供记录参考。")
                         .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.vertical, 4)
                 }.padding(18)
-            }.background(Theme.background).navigationTitle("我的").navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(Theme.background, for: .navigationBar)
+            }.background(skin.background).navigationTitle("我的").navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(skin.background, for: .navigationBar)
                 .sheet(isPresented: $editProfile) { ProfileEditor(onboarding: false) }
                 .sheet(isPresented: $metabolism) { MetabolismDetailView() }
                 .sheet(isPresented: $showConsent) {
@@ -279,6 +297,10 @@ struct SettingsView: View {
                 }
         }
     }
+    private var quotaLabel: String {
+        guard let status = membership.status, status.enabled else { return "" }
+        return status.active ? "本期剩余 \(status.remaining) 次" : "体验剩余 \(status.remaining) 次"
+    }
     private func profileMetric(_ title: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title).font(.caption2).foregroundStyle(.secondary)
@@ -287,7 +309,7 @@ struct SettingsView: View {
     }
     private func settingsRow(_ title: String, symbol: String, detail: String) -> some View {
         HStack(spacing: 11) {
-            Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(Theme.green).frame(width: 25)
+            Image(systemName: symbol).font(.system(size: 17)).foregroundStyle(skin.accent).frame(width: 25)
             Text(title).font(.subheadline).foregroundStyle(.primary)
             Spacer(minLength: 3)
             Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)

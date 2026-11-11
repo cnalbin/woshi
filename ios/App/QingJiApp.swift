@@ -8,9 +8,8 @@ struct QingJiApp: App {
             Group {
                 if session.record == nil {
                     NavigationStack { ServiceSettingsView() }
-                } else {
-                    let workspace = session.record?.configuration.workspaceID ?? ""
-                    AccountWorkspace(workspace: workspace).id(workspace)
+                } else if let configuration = session.record?.configuration {
+                    AccountWorkspace(configuration: configuration).id(configuration.workspaceID)
                 }
             }.environmentObject(session).tint(Theme.green)
         }
@@ -20,19 +19,29 @@ struct QingJiApp: App {
 struct AccountWorkspace: View {
     @StateObject private var store: AppStore
     @StateObject private var health: HealthService
+    @StateObject private var membership: MembershipModel
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("qingji.appearanceMode") private var appearanceMode: AppearanceMode = .system
 
-    init(workspace: String) {
+    init(configuration: ServiceConfiguration) {
+        let workspace = configuration.workspaceID
         _store = StateObject(wrappedValue: AppStore(workspaceID: workspace))
         _health = StateObject(wrappedValue: HealthService(workspaceID: workspace))
+        _membership = StateObject(wrappedValue: MembershipModel(service: configuration))
     }
 
     var body: some View {
-        RootView().environmentObject(store).environmentObject(health)
+        let skin = membership.status?.skin ?? .classic
+        RootView().environmentObject(store).environmentObject(health).environmentObject(membership)
+            .environment(\.appSkin, skin).tint(skin.accent).preferredColorScheme(appearanceMode.scheme)
+            .task { await membership.observeTransactions() }
             .task {
                 health.start()
                 while !Task.isCancelled {
-                    if scenePhase == .active { await store.backupToCloud() }
+                    if scenePhase == .active {
+                        await store.backupToCloud()
+                        await membership.refresh()
+                    }
                     do { try await Task.sleep(for: .seconds(30)) } catch { return }
                 }
             }
@@ -47,7 +56,10 @@ struct AccountWorkspace: View {
                 if let observation { store.saveActivity(observation) }
             }
             .onChange(of: scenePhase, initial: true) { _, phase in
-                if phase == .active { store.scheduleCloudBackup() }
+                if phase == .active {
+                    store.scheduleCloudBackup()
+                    Task { await membership.refresh() }
+                }
             }
     }
 }

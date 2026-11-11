@@ -11,18 +11,17 @@ struct AIConfigurationDraft: Encodable {
 
 struct ModelSettingsView: View {
     @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var membership: MembershipModel
+    @Environment(\.appSkin) private var skin
     @State private var draft = AIConfigurationDraft()
     @State private var hasKey = false
     @State private var savedAddress = ""
     @State private var defaultMeal = ""
     @State private var defaultMetabolism = ""
-    @State private var loading = true
+    @State private var loading = false
     @State private var loaded = false
     @State private var saving = false
-    @State private var checkingBalance = false
-    @State private var settingsMessage = ""
-    @State private var balanceMessage = ""
-    @State private var balance: BalanceResponse?
+    @State private var message: String?
 
     private struct Configuration: Decodable {
         let baseURL: String
@@ -35,91 +34,88 @@ struct ModelSettingsView: View {
         let defaultMetabolismPrompt: String?
     }
 
-    private struct BalanceResponse: Decodable {
-        struct Amount: Decodable, Identifiable {
-            let currency: String
-            let total_balance: String
-            let granted_balance: String
-            let topped_up_balance: String
-            var id: String { currency }
-        }
-        let supported: Bool
-        let message: String?
-        let is_available: Bool?
-        let balance_infos: [Amount]?
-    }
-
     var body: some View {
-        Form {
-            if loading { ProgressView("正在读取模型设置…") }
-            Section("当前账号的 AI 服务") {
-                TextField("API 地址", text: $draft.baseURL).keyboardType(.URL)
-                SecureField(hasKey && sameAddress ? "已保存，留空保留原 Key" : "API Key", text: $draft.apiKey)
-                TextField("文字分析模型", text: $draft.textModel)
-                TextField("照片识别模型", text: $draft.visionModel)
-            }.textInputAutocapitalization(.never).autocorrectionDisabled().disabled(!loaded || saving)
-            if loaded {
-                Section {
-                    NavigationLink {
-                        PromptEditor(title: "拍照识别提示词", prompt: $draft.mealPrompt, defaultPrompt: defaultMeal)
-                    } label: {
-                        LabeledContent("拍照识别", value: draft.mealPrompt.isEmpty ? "默认" : "自定义")
-                    }
-                    NavigationLink {
-                        PromptEditor(title: "静息代谢提示词", prompt: $draft.metabolismPrompt, defaultPrompt: defaultMetabolism)
-                    } label: {
-                        LabeledContent("静息代谢", value: draft.metabolismPrompt.isEmpty ? "默认" : "自定义")
-                    }
-                } header: { Text("提示词") } footer: {
-                    Text("提示词按账号保存。正式分析会保留 App 所需的 JSON 字段和单位。")
-                }.disabled(saving)
-                Section {
-                    NavigationLink {
-                        ModelDebugView(configuration: draft, service: store.service)
-                    } label: { Label("调试模型", systemImage: "terminal") }
-                        .accessibilityIdentifier("model.debug")
-                    Button("保存配置") { Task { await save() } }.disabled(saving)
-                    if saving { ProgressView("正在保存…") }
-                } footer: {
-                    Text("调试使用当前填写的地址、模型、Key 和提示词草稿。模型调用可能产生费用。")
+        ScrollView {
+            VStack(spacing: 14) {
+                if membership.status?.model == "custom" {
+                    HStack {
+                        Label("自定义模型已启用", systemImage: "checkmark.circle.fill").font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Button("切回内置模型") { Task { await switchToBuiltIn() } }
+                            .font(.caption.weight(.semibold)).disabled(saving)
+                    }.padding(14).foregroundStyle(skin.accent)
+                        .background(skin.softAccent, in: RoundedRectangle(cornerRadius: 14))
                 }
-                Section("API 账号余额") {
-                    if let balance, balance.supported {
-                        if let available = balance.is_available {
-                            Label(available ? "余额可用" : "余额不足", systemImage: available ? "checkmark.circle" : "exclamationmark.circle")
-                                .foregroundStyle(available ? Theme.green : Theme.orange)
-                        }
-                        ForEach(balance.balance_infos ?? []) { amount in
-                            VStack(alignment: .leading, spacing: 6) {
-                                LabeledContent("总余额 · \(amount.currency)", value: amount.total_balance).font(.headline)
-                                LabeledContent("充值余额", value: amount.topped_up_balance)
-                                LabeledContent("赠金余额", value: amount.granted_balance)
-                            }.font(.subheadline).monospacedDigit()
-                        }
-                        if balance.balance_infos?.isEmpty != false {
-                            Text("服务商未返回余额明细").foregroundStyle(.secondary)
-                        }
+                if loading { ProgressView("正在读取模型设置…") }
+                Card {
+                    field("API 地址") {
+                        TextField("https://api.deepseek.com", text: $draft.baseURL).keyboardType(.URL)
                     }
-                    Button("刷新余额") { Task { await checkBalance() } }
-                        .disabled(checkingBalance || saving).accessibilityIdentifier("model.balance")
-                    if checkingBalance { ProgressView("正在查询余额…") }
-                    if !balanceMessage.isEmpty { Text(balanceMessage).font(.footnote).foregroundStyle(.secondary) }
+                    field("API Key") {
+                        SecureField(hasKey && sameAddress ? "•••••••• · 已保存" : "输入个人 API Key", text: $draft.apiKey)
+                    }
+                    field("文字模型") { TextField("文字分析模型", text: $draft.textModel) }
+                    field("图片模型") { TextField("照片识别模型", text: $draft.visionModel) }
+                }.textInputAutocapitalization(.never).autocorrectionDisabled().disabled(!loaded || saving)
+                if loaded {
+                    Card {
+                        NavigationLink {
+                            PromptEditor(meal: $draft.mealPrompt, metabolism: $draft.metabolismPrompt,
+                                         defaultMeal: defaultMeal, defaultMetabolism: defaultMetabolism, service: store.service)
+                        } label: { row("编辑提示词", symbol: "pencil") }
+                        Divider()
+                        NavigationLink {
+                            ModelDebugView(configuration: draft, service: store.service)
+                        } label: { row("调试模型", symbol: "terminal") }
+                            .accessibilityIdentifier("model.debug")
+                        Divider()
+                        NavigationLink {
+                            ModelBalanceView(configuration: draft, service: store.service)
+                        } label: { row("查询余额", symbol: "creditcard") }
+                            .accessibilityIdentifier("model.balance")
+                    }.buttonStyle(.plain)
+                    Label("自定义调用由服务商计费", systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary)
+                }
+                if let message { Text(message).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled) }
+                if !loaded && !loading { Button("重新读取设置") { Task { await load() } } }
+            }.padding(18)
+        }.background(skin.background).navigationTitle("自定义模型").navigationBarTitleDisplayMode(.inline)
+            .task { if !loaded { await load() } }
+            .safeAreaInset(edge: .bottom) {
+                if loaded {
+                    Button(saving ? "正在保存…" : "保存并启用") { Task { await save() } }
+                        .buttonStyle(PrimaryButtonStyle()).disabled(saving || !valid)
+                        .accessibilityIdentifier("model.save")
+                        .padding(.horizontal, 18).padding(.vertical, 10).background(skin.background)
                 }
             }
-            if !settingsMessage.isEmpty { Text(settingsMessage).font(.footnote).textSelection(.enabled) }
-            if !loaded && !loading { Button("重新读取设置") { Task { await load() } } }
-        }.scrollContentBackground(.hidden).background(Theme.background)
-            .navigationTitle("AI 模型设置").navigationBarTitleDisplayMode(.inline)
-            .task { if !loaded { await load() } }
-            .onChange(of: draft.baseURL) { _, _ in clearBalance() }
-            .onChange(of: draft.apiKey) { _, _ in clearBalance() }
+    }
+
+    private var valid: Bool {
+        !draft.textModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !draft.visionModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        (!draft.apiKey.isEmpty || (hasKey && sameAddress))
     }
 
     private var sameAddress: Bool {
         draft.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/")) == savedAddress
     }
 
-    private func clearBalance() { balance = nil; balanceMessage = "" }
+    private func field<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.caption.weight(.medium))
+            content().font(.subheadline).padding(10)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(.secondary.opacity(0.23)))
+        }
+    }
+
+    private func row(_ title: String, symbol: String) -> some View {
+        HStack {
+            Label(title, systemImage: symbol).foregroundStyle(.primary)
+            Spacer()
+            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+        }.font(.subheadline).frame(minHeight: 30).contentShape(Rectangle())
+    }
 
     private func apply(_ configuration: Configuration) {
         draft.baseURL = configuration.baseURL
@@ -136,64 +132,158 @@ struct ModelSettingsView: View {
     }
 
     private func load() async {
-        loading = true; settingsMessage = ""
+        loading = true; message = nil
         defer { loading = false }
         do {
             let data = try await CloudClient(configuration: store.service).request("v1/ai/settings", method: "GET")
             apply(try JSONDecoder().decode(Configuration.self, from: data))
-        } catch { settingsMessage = error.localizedDescription }
+        } catch { message = error.localizedDescription }
     }
 
     private func save() async {
         guard !saving else { return }
-        saving = true; settingsMessage = ""
+        saving = true; message = nil
         defer { saving = false }
         do {
             let data = try JSONEncoder().encode(draft)
             let response = try await CloudClient(configuration: store.service).request("v1/ai/settings", method: "PUT", data: data)
             apply(try JSONDecoder().decode(Configuration.self, from: response))
-            settingsMessage = "已保存"
-        } catch { settingsMessage = error.localizedDescription }
+            if membership.status?.enabled == true { try await membership.update(model: "custom") }
+            message = "自定义模型已启用"
+        } catch { message = error.localizedDescription }
     }
 
-    private func checkBalance() async {
-        guard !checkingBalance else { return }
-        let request = draft
-        checkingBalance = true; clearBalance()
-        defer { checkingBalance = false }
-        do {
-            let data = try JSONEncoder().encode(request)
-            let response = try await CloudClient(configuration: store.service).request("v1/ai/balance", method: "POST", data: data)
-            guard request.baseURL == draft.baseURL, request.apiKey == draft.apiKey else { return }
-            balance = try JSONDecoder().decode(BalanceResponse.self, from: response)
-            balanceMessage = balance?.message ?? ""
-        } catch {
-            if request.baseURL == draft.baseURL, request.apiKey == draft.apiKey { balanceMessage = error.localizedDescription }
-        }
+    private func switchToBuiltIn() async {
+        guard !saving else { return }
+        saving = true; message = nil
+        defer { saving = false }
+        do { try await membership.update(model: "builtIn") }
+        catch { message = error.localizedDescription }
     }
 }
 
 private struct PromptEditor: View {
-    let title: String
-    @Binding var prompt: String
-    let defaultPrompt: String
+    @Environment(\.appSkin) private var skin
+    @Environment(\.dismiss) private var dismiss
+    @Binding var meal: String
+    @Binding var metabolism: String
+    let defaultMeal: String
+    let defaultMetabolism: String
+    let service: ServiceConfiguration
+    @State private var mode = 0
+    @State private var mealText = ""
+    @State private var metabolismText = ""
+    @State private var saving = false
+    @State private var message: String?
 
-    @State private var text = ""
+    private var selectedText: Binding<String> { mode == 0 ? $mealText : $metabolismText }
+    var body: some View {
+        VStack(spacing: 16) {
+            Picker("提示词类型", selection: $mode) {
+                Text("拍照识别").tag(0)
+                Text("静息代谢").tag(1)
+            }.pickerStyle(.segmented)
+            TextEditor(text: selectedText).font(.body).padding(8)
+                .scrollContentBackground(.hidden).background(Theme.card, in: RoundedRectangle(cornerRadius: 14))
+                .accessibilityLabel("提示词")
+            Text(message ?? "结果格式由轻记统一校验").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                Button("恢复默认") { selectedText.wrappedValue = mode == 0 ? defaultMeal : defaultMetabolism }
+                    .buttonStyle(.bordered)
+                Button(saving ? "正在保存…" : "保存提示词") { Task { await save() } }.buttonStyle(PrimaryButtonStyle())
+            }.disabled(saving)
+        }.padding(18).background(skin.background).navigationTitle("编辑提示词").navigationBarTitleDisplayMode(.inline)
+            .task {
+                mealText = meal.isEmpty ? defaultMeal : meal
+                metabolismText = metabolism.isEmpty ? defaultMetabolism : metabolism
+            }
+    }
+
+    private func save() async {
+        struct Prompts: Encodable { let mealPrompt: String; let metabolismPrompt: String }
+        guard mealText.count <= 6000 && metabolismText.count <= 6000 else {
+            message = "每条提示词最多 6000 字。"
+            return
+        }
+        saving = true; message = nil
+        defer { saving = false }
+        let mealValue = mealText == defaultMeal ? "" : mealText
+        let metabolismValue = metabolismText == defaultMetabolism ? "" : metabolismText
+        do {
+            let data = try JSONEncoder().encode(Prompts(mealPrompt: mealValue, metabolismPrompt: metabolismValue))
+            _ = try await CloudClient(configuration: service).request("v1/ai/prompts", method: "PUT", data: data)
+            meal = mealValue; metabolism = metabolismValue
+            dismiss()
+        } catch { message = error.localizedDescription }
+    }
+}
+
+private struct ModelBalanceView: View {
+    @Environment(\.appSkin) private var skin
+    let configuration: AIConfigurationDraft
+    let service: ServiceConfiguration
+    @State private var checking = false
+    @State private var response: Balance?
+    @State private var message: String?
+    @State private var checkedAt: Date?
+
+    private struct Balance: Decodable {
+        struct Amount: Decodable, Identifiable {
+            let currency: String
+            let total_balance: String
+            let granted_balance: String
+            let topped_up_balance: String
+            var id: String { currency }
+            var symbol: String { currency == "CNY" ? "¥" : currency == "USD" ? "$" : currency + " " }
+        }
+        let supported: Bool
+        let message: String?
+        let balance_infos: [Amount]?
+    }
 
     var body: some View {
-        Form {
-            Section {
-                TextEditor(text: $text).font(.body).frame(minHeight: 280)
-                    .accessibilityLabel(title)
-                    .onChange(of: text) { _, value in
-                        let limited = String(value.prefix(6000))
-                        if limited != value { text = limited }
-                        prompt = limited == defaultPrompt ? "" : limited
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Card {
+                    Label(URLComponents(string: configuration.baseURL)?.host == "api.deepseek.com" ? "DeepSeek" : "模型服务商",
+                          systemImage: "creditcard").font(.headline)
+                    Text("个人 API 账号").font(.subheadline).foregroundStyle(.secondary)
+                }
+                ForEach(response?.balance_infos ?? []) { amount in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("总余额").font(.headline)
+                        Text(amount.symbol + amount.total_balance).font(.system(size: 38, weight: .bold, design: .rounded))
+                            .monospacedDigit().foregroundStyle(skin.accent)
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(18)
+                        .background(skin.softAccent, in: RoundedRectangle(cornerRadius: 16))
+                    Card {
+                        LabeledContent("充值余额", value: amount.symbol + amount.topped_up_balance)
+                        Divider()
+                        LabeledContent("赠金余额", value: amount.symbol + amount.granted_balance)
                     }
-            } footer: { Text("返回后点「保存配置」生效。清空提示词会使用默认内容。") }
-            Button("恢复默认") { prompt = ""; text = defaultPrompt }.disabled(text == defaultPrompt)
-        }.scrollContentBackground(.hidden).background(Theme.background)
-            .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
-            .onAppear { text = prompt.isEmpty ? defaultPrompt : prompt }
+                }
+                if let checkedAt { Text("更新于 \(checkedAt.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
+                if let message { Text(message).font(.footnote).foregroundStyle(.secondary) }
+                Button { Task { await refresh() } } label: {
+                    Label(checking ? "正在查询…" : "刷新余额", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity).padding(.vertical, 6)
+                }.buttonStyle(.bordered).disabled(checking)
+            }.padding(18)
+        }.background(skin.background).navigationTitle("查询余额").navigationBarTitleDisplayMode(.inline)
+            .task { await refresh() }
+    }
+
+    private func refresh() async {
+        guard !checking else { return }
+        checking = true; message = nil
+        defer { checking = false }
+        do {
+            let body = try JSONEncoder().encode(configuration)
+            let data = try await CloudClient(configuration: service).request("v1/ai/balance", method: "POST", data: body)
+            let result = try JSONDecoder().decode(Balance.self, from: data)
+            response = result
+            checkedAt = result.supported ? Date() : nil
+            message = result.message ?? (result.balance_infos?.isEmpty == true ? "服务商未返回余额明细。" : nil)
+        } catch { message = error.localizedDescription }
     }
 }

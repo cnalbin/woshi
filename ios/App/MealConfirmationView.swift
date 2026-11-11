@@ -7,6 +7,7 @@ enum MealAnswerChoice: Equatable {
 }
 
 struct MealConfirmationView: View {
+    @Environment(\.appSkin) private var skin
     @Environment(\.dismiss) private var dismiss
     let questions: [MealClarification]
     @Binding var choices: [Int: MealAnswerChoice]
@@ -41,7 +42,7 @@ struct MealConfirmationView: View {
                     }
                 }.padding(18)
             }
-            .background(Theme.background)
+            .background(skin.background)
             .navigationTitle("确认食物信息").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("稍后") { dismiss() } } }
             .safeAreaInset(edge: .bottom) {
@@ -50,7 +51,7 @@ struct MealConfirmationView: View {
                     dismiss()
                 }.buttonStyle(PrimaryButtonStyle()).disabled(!allAnswered)
                     .accessibilityIdentifier("confirmation.continue")
-                    .padding(.horizontal, 18).padding(.vertical, 10).background(Theme.background)
+                    .padding(.horizontal, 18).padding(.vertical, 10).background(skin.background)
             }
         }
     }
@@ -82,10 +83,10 @@ struct MealConfirmationView: View {
         let selected = choices[index] == value
         return Button { choices[index] = value } label: {
             HStack(spacing: 10) {
-                Image(systemName: selected ? "largecircle.fill.circle" : "circle").foregroundStyle(Theme.green)
+                Image(systemName: selected ? "largecircle.fill.circle" : "circle").foregroundStyle(skin.accent)
                 Text(title).font(.subheadline).foregroundStyle(.primary)
                 Spacer(minLength: 0)
-            }.padding(11).background(selected ? Theme.softGreen : Color.clear, in: RoundedRectangle(cornerRadius: 10))
+            }.padding(11).background(selected ? skin.softAccent : Color.clear, in: RoundedRectangle(cornerRadius: 10))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain)
             .accessibilityAddTraits(selected ? .isSelected : [])

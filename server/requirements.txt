@@ -7,3 +7,4 @@ pydantic-settings==2.16.2
 
 cryptography>=50,<51
 filelock>=4,<5
+app-store-server-library==3.1.2

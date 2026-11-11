@@ -75,6 +75,17 @@ class ProviderSettings:
                 "hasKey": bool(value.get("encryptedKey")), "mealPrompt": value.get("mealPrompt", ""),
                 "metabolismPrompt": value.get("metabolismPrompt", "")}
 
+    def save_prompts(self, owner, value):
+        with self.engine.begin() as conn:
+            conn.execute(select(states.c.owner).where(states.c.owner == owner).with_for_update()).one()
+            old = conn.execute(select(configurations.c.payload).where(configurations.c.owner == owner)).scalar_one_or_none()
+            if old is None:
+                old = {"baseURL": "https://api.deepseek.com", "textModel": "", "visionModel": "", "encryptedKey": ""}
+                conn.execute(insert(configurations).values(owner=owner, payload={**old, **value.model_dump()}))
+            else:
+                conn.execute(update(configurations).where(configurations.c.owner == owner)
+                             .values(payload={**old, **value.model_dump()}))
+
     def draft_credentials(self, owner, value):
         address = self.validated_url(value.baseURL)
         key = value.apiKey.get_secret_value()
@@ -86,8 +97,8 @@ class ProviderSettings:
             raise StorageError(400, "KEY_REQUIRED", "请填写此服务的个人 API Key。")
         return address, key
 
-    def credentials(self, owner, kind):
-        value = self.read(owner)
+    def credentials(self, owner, kind, source=None):
+        value = self.read(owner) if source != "builtIn" else None
         if value:
             key = value.get("encryptedKey", "")
             model = value["visionModel" if kind == "meal" else "textModel"]
@@ -95,6 +106,8 @@ class ProviderSettings:
                 raise StorageError(400, "AI_NOT_CONFIGURED", "请先填写 API Key 和本次分析使用的模型名称。")
             prompt = value.get("mealPrompt" if kind == "meal" else "metabolismPrompt", "")
             return value["baseURL"], self.cipher().decrypt(key.encode()).decode(), model, prompt
+        if source == "custom":
+            raise StorageError(400, "AI_NOT_CONFIGURED", "请先保存个人模型配置。")
         key = self.settings.deepseek_api_key.get_secret_value()
         if not key or key.startswith("replace-"):
             raise StorageError(503, "AI_NOT_CONFIGURED", "请在“我的 → AI 模型设置”配置模型。")

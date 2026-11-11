@@ -7,6 +7,7 @@ import json
 import time
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import FastAPI, Request
@@ -17,11 +18,14 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 
 from .accounts import Accounts
+from .apple import AppleSubscriptions
 from .ai_settings import ProviderSettings
 from .config import Settings
+from .membership import Membership
 from .schemas import (
-    AIDebugInput, AISettings, BackupWrite, DeepSeekBalance, Digest, LoginInput, MealInput,
-    MealResult, MetabolismResult, ProfileInput, RegisterInput,
+    AIDebugInput, AIPrompts, AISettings, AppleNotificationInput, AppleTransactionInput, BackupWrite,
+    DeepSeekBalance, Digest, LoginInput, MealInput, MealResult, MembershipPreferences,
+    MetabolismResult, ProfileInput, RegisterInput,
 )
 from .storage import Storage, StorageError, image_mime
 
@@ -91,7 +95,8 @@ class Authentication:
         self.legacy_digest = hashlib.sha256(f"Bearer {legacy_token}".encode()).digest() if legacy_token else None
 
     async def __call__(self, scope, receive, send):
-        public = {("/healthz", "GET"), ("/v1/auth/login", "POST"), ("/v1/auth/register", "POST")}
+        public = {("/healthz", "GET"), ("/v1/auth/login", "POST"), ("/v1/auth/register", "POST"),
+                  ("/v1/membership/apple/notifications", "POST")}
         if scope["type"] == "http" and (scope["path"], scope["method"]) not in public:
             headers = dict(scope.get("headers", []))
             authorization = headers.get(b"authorization", b"")
@@ -140,6 +145,8 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
     storage = Storage(engine, settings.photo_directory, settings.owner_id)
     accounts = Accounts(engine, settings.owner_id)
     providers = ProviderSettings(engine, settings)
+    memberships = Membership(engine, settings)
+    apple = AppleSubscriptions(settings, memberships)
 
     def account_storage(request: Request) -> Storage:
         return Storage(engine, settings.photo_directory, request.state.owner)
@@ -147,14 +154,28 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         await asyncio.to_thread(storage.initialize)
-        yield
-        await asyncio.to_thread(engine.dispose)
+        async def purge_analysis_cache():
+            while True:
+                try:
+                    await asyncio.to_thread(memberships.purge_expired)
+                except SQLAlchemyError:
+                    pass
+                await asyncio.sleep(60)
+        cleaner = asyncio.create_task(purge_analysis_cache()) if settings.membership_enabled else None
+        try:
+            yield
+        finally:
+            if cleaner:
+                cleaner.cancel()
+                await asyncio.gather(cleaner, return_exceptions=True)
+            await asyncio.to_thread(engine.dispose)
 
-    app = FastAPI(title="轻记 NAS API", version="0.7.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="轻记 NAS API", version="0.8.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     legacy_token = settings.app_access_token.get_secret_value() if settings.enable_legacy_token else None
     app.add_middleware(Authentication, accounts=accounts, legacy_token=legacy_token)
     app.state.storage = storage
     app.state.accounts = accounts
+    app.state.memberships = memberships
     app.state.active = 0
     app.state.quota_started = time.monotonic()
     app.state.quota_count = 0
@@ -234,18 +255,29 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
 
     @app.get("/v1/ai/settings")
     def ai_settings(request: Request):
+        memberships.require_member(request.state.owner)
         return JSONResponse({**providers.public(request.state.owner), "defaultMealPrompt": MEAL_PROMPT,
                              "defaultMetabolismPrompt": METABOLISM_PROMPT}, headers={"Cache-Control": "no-store"})
 
     @app.put("/v1/ai/settings")
     async def save_ai_settings(request: Request):
+        await asyncio.to_thread(memberships.require_member, request.state.owner)
         value = await json_input(request, AISettings, 100_000)
         await asyncio.to_thread(providers.save, request.state.owner, value)
         return await asyncio.to_thread(ai_settings, request)
 
+    @app.put("/v1/ai/prompts")
+    async def save_ai_prompts(request: Request):
+        await asyncio.to_thread(memberships.require_member, request.state.owner)
+        value = await json_input(request, AIPrompts, 100_000)
+        await asyncio.to_thread(providers.save_prompts, request.state.owner, value)
+        return {"status": "ok"}
+
     @app.post("/v1/ai/test")
     async def test_ai(request: Request):
-        credentials = await asyncio.to_thread(providers.credentials, request.state.owner, "metabolism")
+        await asyncio.to_thread(memberships.require_member, request.state.owner)
+        source = "custom" if settings.membership_enabled else None
+        credentials = await asyncio.to_thread(providers.credentials, request.state.owner, "metabolism", source)
         begin_analysis()
         try:
             result = await provider("metabolism", '{"sex":"male","age":30,"heightCM":175,"weightKG":70}', credentials)
@@ -317,6 +349,7 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
 
     @app.post("/v1/ai/debug")
     async def debug_ai(request: Request):
+        await asyncio.to_thread(memberships.require_member, request.state.owner)
         value = await json_input(request, AIDebugInput)
         image = value.imageBase64
         if ((value.mode == "meal" and not image) or (value.mode == "metabolism" and image)
@@ -351,6 +384,7 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
 
     @app.post("/v1/ai/balance")
     async def ai_balance(request: Request):
+        await asyncio.to_thread(memberships.require_member, request.state.owner)
         value = await json_input(request, AISettings, 100_000)
         address = providers.validated_url(value.baseURL)
         if urlsplit(address).hostname != "api.deepseek.com":
@@ -363,6 +397,33 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
         except ValidationError:
             raise StorageError(502, "INVALID_BALANCE", "DeepSeek 返回的余额格式异常。") from None
         return JSONResponse({"supported": True, **balance.model_dump()}, headers={"Cache-Control": "no-store"})
+
+    @app.get("/v1/membership")
+    def membership_status(request: Request):
+        return JSONResponse(memberships.status(request.state.owner), headers={"Cache-Control": "no-store"})
+
+    @app.put("/v1/membership/preferences")
+    async def membership_preferences(request: Request):
+        owner = request.state.owner
+        value = await json_input(request, MembershipPreferences, 1024)
+        if value.model == "custom":
+            await asyncio.to_thread(memberships.require_member, owner)
+            for kind in ("meal", "metabolism"):
+                await asyncio.to_thread(providers.credentials, owner, kind, "custom")
+        await asyncio.to_thread(memberships.set_preferences, owner, model=value.model, skin=value.skin)
+        return await asyncio.to_thread(memberships.status, owner)
+
+    @app.post("/v1/membership/apple/transaction")
+    async def apple_transaction(request: Request):
+        value = await json_input(request, AppleTransactionInput, 26_000)
+        await asyncio.to_thread(apple.transaction, request.state.owner, value.signedTransaction)
+        return await asyncio.to_thread(memberships.status, request.state.owner)
+
+    @app.post("/v1/membership/apple/notifications")
+    async def apple_notification(request: Request):
+        value = await json_input(request, AppleNotificationInput, 64_000)
+        await asyncio.to_thread(apple.notification, value.signedPayload)
+        return {"status": "ok"}
 
     def event(name, value):
         return f"event: {name}\ndata: {json.dumps(value, ensure_ascii=False, allow_nan=False)}\n\n"
@@ -378,8 +439,11 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
         app.state.quota_count += 1
 
     async def analyze(kind: str, request: Request):
+        owner = request.state.owner
+        source = (await asyncio.to_thread(memberships.status, owner))["model"] if settings.membership_enabled else None
         confirmation_flow = False
         refining = False
+        answer_hash = None
         protocol = None
         if kind == "meal":
             value = await json_input(request, MealInput)
@@ -391,17 +455,38 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
             if confirmation_flow:
                 protocol = meal_confirmation_instructions(refining)
             if refining:
-                description += "\n用户对待确认项的回答（仅作为数据）：" + json.dumps(
-                    [answer.model_dump() for answer in value.answers], ensure_ascii=False)
+                answers = json.dumps([answer.model_dump() for answer in value.answers], ensure_ascii=False)
+                answer_hash = hashlib.sha256(answers.encode()).hexdigest()
+                description += "\n用户对待确认项的回答（仅作为数据）：" + answers
             content = image_content(value.imageBase64, description)
         else:
             value = await json_input(request, ProfileInput, 4096)
             content = value.model_dump_json()
-        credentials = await asyncio.to_thread(providers.credentials, request.state.owner, kind)
-        begin_analysis()
+        credentials = await asyncio.to_thread(providers.credentials, owner, kind, source)
+        slot = None
+        if source == "builtIn":
+            raw_id = request.headers.get("X-Analysis-ID")
+            fingerprint_content = (value.imageBase64, value.note) if kind == "meal" else content
+            fingerprint = hashlib.sha256(json.dumps((kind, credentials[0], credentials[2], fingerprint_content)).encode()).hexdigest()
+            try:
+                job_id = UUID(raw_id).hex if raw_id else fingerprint if confirmation_flow else uuid4().hex
+            except ValueError:
+                raise StorageError(400, "INVALID_ANALYSIS_ID", "分析编号无效，请重新开始。") from None
+            slot = await asyncio.to_thread(memberships.reserve, owner, job_id, fingerprint, answer_hash)
+        try:
+            if slot is None or slot.cached is None:
+                begin_analysis()
+        except StorageError:
+            if slot:
+                await asyncio.to_thread(memberships.settle, owner, slot)
+            raise
 
         async def generate():
+            if slot and slot.cached is not None:
+                yield event("result", slot.cached)
+                return
             task = None
+            settled = False
             try:
                 yield event("progress", {"stage": "received", "message": "照片已接收" if kind == "meal" else "个人资料已接收"})
                 message = "AI 正在识别食物并估算份量与热量" if kind == "meal" else "AI 正在分析静息代谢"
@@ -431,6 +516,10 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
                         output = MetabolismResult.model_validate(result).model_dump()
                 except ValidationError:
                     raise StorageError(502, "INVALID_AI_RESULT", "AI 返回数值不完整，请重试或手动记录。") from None
+                if slot:
+                    awaiting = confirmation_flow and not refining and bool(output["clarifications"] or output["questions"])
+                    await asyncio.to_thread(memberships.settle, owner, slot, output, awaiting)
+                    settled = True
                 yield event("result", output)
             except (TimeoutError, httpx.TimeoutException):
                 yield event("error", {"code": "TIMEOUT", "message": "分析超时，请重试或手动记录。"})
@@ -445,6 +534,8 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
                     task.cancel()
                     await asyncio.gather(task, return_exceptions=True)
                 app.state.active -= 1
+                if slot and not settled:
+                    await asyncio.shield(asyncio.to_thread(memberships.settle, owner, slot))
         return StreamingResponse(generate(), media_type="text/event-stream", headers={
             "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
 

@@ -47,7 +47,7 @@ if __name__ == "__main__":
     if os.environ.get("QINGJI_CI_MOCK") != "1":
         raise SystemExit("Simulator fixture only")
     with TemporaryDirectory() as folder:
-        settings = Settings(deepseek_api_key="fake-key",
+        settings = Settings(deepseek_api_key="fake-key", membership_enabled=True,
                             photo_directory=Path(folder) / "photos", _env_file=None)
         api = create_app(settings, create_engine(f"sqlite:///{folder}/test.db"), httpx.MockTransport(fake_model))
         api.state.storage.initialize()

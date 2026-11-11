@@ -23,15 +23,17 @@ struct Card<Content: View>: View {
 }
 
 struct PrimaryButtonStyle: ButtonStyle {
+    @Environment(\.appSkin) private var skin
     @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.system(size: 16, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 14)
-            .background(Theme.green.opacity(!isEnabled ? 0.35 : configuration.isPressed ? 0.7 : 1), in: RoundedRectangle(cornerRadius: 14))
+            .background(skin.accent.opacity(!isEnabled ? 0.35 : configuration.isPressed ? 0.7 : 1), in: RoundedRectangle(cornerRadius: 14))
             .foregroundStyle(.white)
     }
 }
 
 struct AnalysisStatusView: View {
+    @Environment(\.appSkin) private var skin
     let progress: AnalysisProgress
     let startedAt: Date
     var history: [AnalysisProgress] = []
@@ -39,8 +41,8 @@ struct AnalysisStatusView: View {
     var body: some View {
         Card {
             HStack(spacing: 12) {
-                Image(systemName: "sparkles").font(.title2).foregroundStyle(Theme.green)
-                    .frame(width: 46, height: 46).background(Theme.softGreen, in: RoundedRectangle(cornerRadius: 14))
+                Image(systemName: "sparkles").font(.title2).foregroundStyle(skin.accent)
+                    .frame(width: 46, height: 46).background(skin.softAccent, in: RoundedRectangle(cornerRadius: 14))
                     .symbolEffect(.pulse, options: .repeating)
                 VStack(alignment: .leading, spacing: 5) {
                     Text("AI 正在分析").font(.headline)
@@ -50,14 +52,14 @@ struct AnalysisStatusView: View {
                     }
                 }
                 Spacer()
-                ProgressView().tint(Theme.green)
+                ProgressView().tint(skin.accent)
             }
             VStack(alignment: .leading, spacing: 12) {
                 stage("发送资料", index: 0)
                 stage("识别与估算", index: 1)
                 stage("整理结果", index: 2)
             }
-            Text(progress.message).font(.subheadline).foregroundStyle(Theme.green)
+            Text(progress.message).font(.subheadline).foregroundStyle(skin.accent)
                 .accessibilityIdentifier("analysis.progress")
             Text("份量与用油会影响估算。分析完成后，请核对结果并确认保存。")
                 .font(.caption).foregroundStyle(.secondary)
@@ -79,23 +81,24 @@ struct AnalysisStatusView: View {
     private func stage(_ title: String, index: Int) -> some View {
         HStack(spacing: 10) {
             Image(systemName: index < activeStage ? "checkmark.circle.fill" : index == activeStage ? "circle.inset.filled" : "circle")
-                .foregroundStyle(index <= activeStage ? Theme.green : .secondary)
+                .foregroundStyle(index <= activeStage ? skin.accent : .secondary)
             Text(title).font(.subheadline).foregroundStyle(index <= activeStage ? Color.primary : Color.secondary)
             Spacer()
-            if index == activeStage { Text("进行中").font(.caption2).foregroundStyle(Theme.green) }
+            if index == activeStage { Text("进行中").font(.caption2).foregroundStyle(skin.accent) }
             else if index < activeStage { Text("已完成").font(.caption2).foregroundStyle(.secondary) }
         }
     }
 }
 
 struct AIConsentView: View {
+    @Environment(\.appSkin) private var skin
     let accept: () -> Void
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    Image(systemName: "sparkles").font(.system(size: 44)).foregroundStyle(Theme.green)
+                    Image(systemName: "sparkles").font(.system(size: 44)).foregroundStyle(skin.accent)
                     Text("使用 AI 前，请了解").font(.largeTitle.bold())
                     Text("拍照分析会将本次食物照片和补充说明，通过所连接的服务器发送给你配置的模型服务。代谢分析仅发送年龄、性别、身高和体重。不会发送苹果健康活动数据或历史饮食。")
                     Text("仅在你主动点击分析时发送给模型服务。账号数据自动同步到所连接的服务器。模型服务商的处理与保留政策以其条款为准。")

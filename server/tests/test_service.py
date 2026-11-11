@@ -3,6 +3,8 @@ import base64
 import hashlib
 import json
 import os
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
@@ -12,6 +14,7 @@ from sqlalchemy import create_engine
 
 from qingji.app import create_app
 from qingji.config import Settings
+from qingji.membership import account_token
 from qingji.schemas import BackupWrite
 
 TOKEN = "test-token-only-" + "a" * 32
@@ -56,6 +59,53 @@ def test_deepseek_sse_contract(fixture):
         "event: progress", "event: progress", "event: progress", "event: result"]
     assert "PRIVATE_REASONING" not in response.text
     assert "1700" in response.text
+
+
+def test_membership_quota_confirmation_and_account_permissions(fixture, monkeypatch):
+    model_calls = []
+
+    def model(request):
+        model_calls.append(request)
+        content = json.loads(request.content)["messages"][-1]["content"]
+        result = {"isFood": True, "items": [{"name": "玉米", "estimatedGrams": 100, "estimatedKcal": 110}],
+                  "summary": "玉米热量估算", "assumptions": [], "questions": []}
+        if "用户对待确认项的回答" not in content[0]["text"]:
+            result["clarifications"] = [{"question": "甜玉米还是糯玉米？", "options": ["甜玉米", "糯玉米"]}]
+        return reply(result)
+
+    client, app = fixture(model, membership_enabled=True)
+    monkeypatch.setattr(app.state.memberships, "limit", 1)
+    with client:
+        username = uuid4().hex
+        app.state.accounts.create(username, "test-password-only")
+        owner = app.state.accounts.login(username, "test-password-only")["accountId"]
+        headers = {"X-Analysis-ID": str(uuid4())}
+        meal = {"imageBase64": base64.b64encode(PHOTO).decode(), "confirmationFlow": True}
+        assert client.get("/v1/membership").json()["remaining"] == 1
+        assert client.get("/v1/ai/settings").status_code == 403
+        assert client.put("/v1/membership/preferences", json={"skin": "orange"}).status_code == 403
+        first = client.post("/v1/analyze/meal", headers=headers, json=meal)
+        assert "甜玉米" in first.text
+        assert client.get("/v1/membership").json()["remaining"] == 1
+        answers = [{"question": "甜玉米还是糯玉米？", "answer": "甜玉米"}]
+        second = client.post("/v1/analyze/meal", headers=headers, json={**meal, "answers": answers})
+        assert "110" in second.text
+        assert client.get("/v1/membership").json()["remaining"] == 0
+        assert client.post("/v1/analyze/meal", headers=headers, json={**meal, "answers": answers}).status_code == 200
+        assert len(model_calls) == 2
+        assert client.post("/v1/analyze/metabolism", json=PROFILE).status_code == 429
+        now = datetime.now(timezone.utc)
+        transaction = SimpleNamespace(productId=app.state.memberships.settings.apple_subscription_product,
+                                      originalTransactionId=uuid4().hex, transactionId=uuid4().hex,
+                                      purchaseDate=int(now.timestamp() * 1000),
+                                      expiresDate=int((now + timedelta(days=30)).timestamp() * 1000),
+                                      appAccountToken=account_token(owner), revocationDate=None)
+        app.state.memberships.apply_transaction(transaction, now.replace(tzinfo=None), owner=owner, renewal=True)
+        assert app.state.memberships.status(owner)["active"]
+        assert app.state.memberships.status(owner)["remaining"] == 1
+        app.state.memberships.set_preferences(owner, skin="orange")
+        assert app.state.memberships.status(owner)["skin"] == "orange"
+        assert client.get("/v1/membership").json()["skin"] == "classic"
 
 
 def test_multimodal_photo_and_no_food(fixture):

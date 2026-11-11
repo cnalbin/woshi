@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -26,6 +27,12 @@ class Settings(BaseSettings):
     max_concurrent_requests: int = Field(default=3, ge=1, le=20)
     # Existing single-user backup namespace, which can be assigned to one account.
     ai_allowed_hosts: str = "api.deepseek.com,api.openai.com"
+    membership_enabled: bool = False
+    apple_subscription_product: str = "com.cnalbin.qingji.membership.monthly"
+    apple_bundle_id: str = "com.cnalbin.qingji"
+    apple_environment: Literal["Production", "Sandbox"] = "Production"
+    apple_app_id: int | None = Field(default=None, gt=0)
+    apple_root_certificates: str = ""
     owner_id: str = Field(default="owner", pattern=r"^[a-zA-Z0-9_-]{1,40}$")
 
     def connection_url(self) -> URL:

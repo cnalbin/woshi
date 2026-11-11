@@ -174,3 +174,21 @@ class BalanceAmount(BaseModel):
 class DeepSeekBalance(BaseModel):
     is_available: StrictBool
     balance_infos: list[BalanceAmount] = Field(max_length=8)
+
+
+class MembershipPreferences(Model):
+    model: Literal["builtIn", "custom"] | None = None
+    skin: Literal["classic", "orange", "blue"] | None = None
+
+
+class AIPrompts(Model):
+    mealPrompt: str = Field(max_length=6000)
+    metabolismPrompt: str = Field(max_length=6000)
+
+
+class AppleTransactionInput(Model):
+    signedTransaction: str = Field(min_length=40, max_length=24000)
+
+
+class AppleNotificationInput(Model):
+    signedPayload: str = Field(min_length=40, max_length=60000)

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct TodayView: View {
+    @Environment(\.appSkin) private var skin
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var health: HealthService
     @Environment(\.scenePhase) private var scenePhase
@@ -26,10 +27,10 @@ struct TodayView: View {
                     activityCard
                     mealList(meals)
                 }.padding(.horizontal, 18).padding(.bottom, 18)
-            }.background(Theme.background)
+            }.background(skin.background)
                 .navigationTitle(Calendar.current.isDateInToday(day) ? "今日" : "饮食记录")
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(Theme.background, for: .navigationBar)
+                .toolbarBackground(skin.background, for: .navigationBar)
                 .safeAreaInset(edge: .bottom) {
                     HStack(spacing: 10) {
                         Button { photo = true } label: { Label("拍照记餐", systemImage: "camera") }
@@ -38,9 +39,9 @@ struct TodayView: View {
                             Label("手动添加", systemImage: "plus").font(.system(size: 15, weight: .semibold))
                                 .padding(.vertical, 14).padding(.horizontal, 16)
                                 .background(Theme.card, in: RoundedRectangle(cornerRadius: 14))
-                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.green.opacity(0.5), lineWidth: 1))
+                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(skin.accent.opacity(0.5), lineWidth: 1))
                         }.accessibilityIdentifier("meal.manual")
-                    }.padding(.horizontal, 18).padding(.vertical, 10).background(Theme.background)
+                    }.padding(.horizontal, 18).padding(.vertical, 10).background(skin.background)
                 }
                 .sheet(isPresented: $profileEditor) { ProfileEditor(onboarding: false) }
                 .sheet(isPresented: $chooseDate) {
@@ -96,19 +97,19 @@ struct TodayView: View {
                         Text("目标 \(Int(profile.dailyTarget)) kcal").font(.caption).foregroundStyle(.secondary)
                         let remaining = profile.dailyTarget - intake
                         Text(remaining >= 0 ? "还可摄入 \(Int(remaining.rounded())) kcal" : "超过目标 \(Int((-remaining).rounded())) kcal")
-                            .font(.caption.weight(.semibold)).foregroundStyle(remaining >= 0 ? Theme.green : Theme.orange)
+                            .font(.caption.weight(.semibold)).foregroundStyle(remaining >= 0 ? skin.accent : Theme.orange)
                     } else {
                         Text("记下每一餐，慢慢看见变化").font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Spacer(minLength: 0)
                 ZStack {
-                    Circle().stroke(Theme.softGreen, lineWidth: 9)
+                    Circle().stroke(skin.softAccent, lineWidth: 9)
                     if let target = store.snapshot.profile?.dailyTarget {
                         Circle().trim(from: 0, to: min(1, intake / target))
-                            .stroke(Theme.green, style: StrokeStyle(lineWidth: 9, lineCap: .round)).rotationEffect(.degrees(-90))
+                            .stroke(skin.accent, style: StrokeStyle(lineWidth: 9, lineCap: .round)).rotationEffect(.degrees(-90))
                     }
-                    Image(systemName: "fork.knife").font(.title3).foregroundStyle(Theme.green)
+                    Image(systemName: "fork.knife").font(.title3).foregroundStyle(skin.accent)
                 }.frame(width: 76, height: 76).accessibilityHidden(true)
             }
             if store.snapshot.profile == nil {
@@ -155,7 +156,7 @@ struct TodayView: View {
             HStack { Text("今日饮食").font(.headline); Spacer(); Text("\(meals.count) 条记录").font(.caption).foregroundStyle(.secondary) }
             if meals.isEmpty {
                 VStack(spacing: 10) {
-                    Image(systemName: "leaf").font(.system(size: 30)).foregroundStyle(Theme.green)
+                    Image(systemName: "leaf").font(.system(size: 30)).foregroundStyle(skin.accent)
                     Text("从第一餐开始").font(.subheadline.weight(.semibold))
                     Text("拍张照片，或手动记录食物与热量").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity).padding(.vertical, 20)
@@ -184,6 +185,7 @@ struct TodayView: View {
 }
 
 struct MetabolismCard: View {
+    @Environment(\.appSkin) private var skin
     let profile: Profile
     let assessment: MetabolismAssessment?
     let action: () -> Void
@@ -209,7 +211,7 @@ struct MetabolismCard: View {
                 Text("≈ \(Int(Metabolism.combined(profile: profile, assessment: current).rounded()))")
                     .font(.system(size: 24, weight: .bold, design: .rounded))
                 Text("kcal/天").font(.caption)
-            }.foregroundStyle(Theme.green).padding(10).background(Theme.softGreen, in: RoundedRectangle(cornerRadius: 12))
+            }.foregroundStyle(skin.accent).padding(10).background(skin.softAccent, in: RoundedRectangle(cornerRadius: 12))
             Text(current == nil ? "AI 尚未分析，暂用公式估算。" : (current!.canBlend(with: profile) ? "公式 80% + AI 20% · 产品参考估算" : "两者差异较大，暂用公式，请核对资料。"))
                 .font(.caption2).foregroundStyle(.secondary)
         }

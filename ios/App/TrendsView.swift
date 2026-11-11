@@ -29,6 +29,7 @@ final class TrendsModel: ObservableObject {
 }
 
 struct TrendsView: View {
+    @Environment(\.appSkin) private var skin
     @EnvironmentObject private var store: AppStore
     @StateObject private var model = TrendsModel()
     @State private var period = TrendPeriod.week
@@ -51,9 +52,9 @@ struct TrendsView: View {
                     if model.loadedKey == key, let report = model.report { content(report) }
                     else { ProgressView("正在整理记录…").frame(maxWidth: .infinity, minHeight: 300) }
                 }.padding(18)
-            }.background(Theme.background)
+            }.background(skin.background)
                 .navigationTitle("趋势").navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(Theme.background, for: .navigationBar)
+                .toolbarBackground(skin.background, for: .navigationBar)
                 .task(id: key) { await model.load(key: key, snapshot: store.snapshot, period: period, anchor: anchor, calendar: calendar) }
                 .onChange(of: key) { _, _ in selectedSlot = nil }
         }
@@ -69,7 +70,7 @@ struct TrendsView: View {
                 .disabled(report.interval.end > Date()).accessibilityLabel("下一时段")
         }
         HStack(spacing: 10) {
-            metric("日均摄入", number(report.intakeAverage), color: Theme.green)
+            metric("日均摄入", number(report.intakeAverage), color: skin.accent)
             metric(activityOnly ? "日均活动" : "日均总消耗", number(activityOnly ? report.activityAverage : report.totalAverage), color: Theme.orange)
             metric("记录天数", "\(report.recordedDays)/\(report.elapsedDays)", color: .primary)
         }
@@ -80,7 +81,7 @@ struct TrendsView: View {
                 Text("kcal").font(.caption).foregroundStyle(.secondary)
             }
             HStack(spacing: 18) {
-                legend("摄入", Theme.green); legend(activityOnly ? "活动消耗" : "总消耗估算", Theme.orange)
+                legend("摄入", skin.accent); legend(activityOnly ? "活动消耗" : "总消耗估算", Theme.orange)
             }
             EnergyChart(buckets: report.buckets, activityOnly: activityOnly, selectedSlot: selectedSlot) { bucket in
                 if period == .year { anchor = bucket.date; period = .month }
@@ -126,7 +127,7 @@ struct TrendsView: View {
                         Text(bucket.date.formatted(period == .year ? .dateTime.month() : .dateTime.month().day()))
                             .foregroundStyle(.primary)
                         Spacer()
-                        Text(number(bucket.intake)).foregroundStyle(Theme.green)
+                        Text(number(bucket.intake)).foregroundStyle(skin.accent)
                         Text("/ \(number(activityOnly ? bucket.activity : bucket.total))").foregroundStyle(.secondary)
                         Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
                     }.font(.subheadline).padding(.vertical, 7)
@@ -152,6 +153,7 @@ struct TrendsView: View {
 
 /// At most 62 bars. Discrete slots avoid date-scale and gesture reconstruction between ranges.
 private struct EnergyChart: View {
+    @Environment(\.appSkin) private var skin
     let buckets: [TrendBucket]
     let activityOnly: Bool
     let selectedSlot: Int?
@@ -178,9 +180,9 @@ private struct EnergyChart: View {
                     let x = (Double(bucket.slot) + 0.5) * slot
                     if selectedSlot == bucket.slot {
                         context.fill(Path(roundedRect: CGRect(x: x - slot / 2, y: top, width: slot, height: height), cornerRadius: 4),
-                                     with: .color(Theme.softGreen))
+                                     with: .color(skin.softAccent))
                     }
-                    let values: [(Double?, Color, Double)] = [(bucket.intake, Theme.green, -barWidth - 1),
+                    let values: [(Double?, Color, Double)] = [(bucket.intake, skin.accent, -barWidth - 1),
                         (activityOnly ? bucket.activity : bucket.total, Theme.orange, 1)]
                     for (value, color, offset) in values {
                         if let value, value > 0 {

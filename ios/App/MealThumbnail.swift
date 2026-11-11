@@ -21,14 +21,15 @@ private actor ThumbnailCache {
 }
 
 struct MealThumbnail: View {
+    @Environment(\.appSkin) private var skin
     let url: URL?
     let symbol: String
     @State private var image: UIImage?
     var body: some View {
         ZStack {
-            Theme.softGreen
+            skin.softAccent
             if let image { Image(uiImage: image).resizable().scaledToFill() }
-            else { Image(systemName: symbol).font(.title3).foregroundStyle(Theme.green) }
+            else { Image(systemName: symbol).font(.title3).foregroundStyle(skin.accent) }
         }.frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 13))
             .task(id: url) {
                 image = nil

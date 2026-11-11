@@ -3,6 +3,7 @@ import PhotosUI
 import UIKit
 
 struct MealEditor: View {
+    @Environment(\.appSkin) private var skin
     @EnvironmentObject private var store: AppStore
     @Environment(\.dismiss) private var dismiss
     let existing: Meal?
@@ -70,7 +71,7 @@ struct MealEditor: View {
                     HStack {
                         Text("本次摄入").font(.headline)
                         Spacer()
-                        Text("\(Int(total.rounded())) kcal").font(.title2.bold()).foregroundStyle(Theme.green)
+                        Text("\(Int(total.rounded())) kcal").font(.title2.bold()).foregroundStyle(skin.accent)
                     }
                 } footer: {
                     Text(analysis?.portionBasis == "consumed"
@@ -79,7 +80,7 @@ struct MealEditor: View {
                 }
                 if let summary = analysis?.summary ?? existing?.summary, !summary.isEmpty {
                     Section("估算依据") {
-                        Label("AI 估算，保存前请核对", systemImage: "sparkles").foregroundStyle(Theme.green)
+                        Label("AI 估算，保存前请核对", systemImage: "sparkles").foregroundStyle(skin.accent)
                         Text(summary)
                         ForEach(Array((analysis?.assumptions ?? existing?.assumptions ?? []).enumerated()), id: \.offset) { _, value in
                             Text(value).font(.caption).foregroundStyle(.secondary)
@@ -94,13 +95,13 @@ struct MealEditor: View {
                     Section { Button("删除这条记录", role: .destructive) { deleteConfirmation = true } }
                 }
             }
-            .scrollContentBackground(.hidden).background(Theme.background)
+            .scrollContentBackground(.hidden).background(skin.background)
             .navigationTitle(existing == nil ? "确认这餐" : "编辑记录").navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
                 Button(saving ? "正在保存…" : "确认并保存") { save() }.buttonStyle(PrimaryButtonStyle())
                     .accessibilityIdentifier("meal.save")
                     .disabled(!valid || saving || store.storageUnavailable)
-                    .padding(.horizontal, 18).padding(.vertical, 10).background(Theme.background)
+                    .padding(.horizontal, 18).padding(.vertical, 10).background(skin.background)
             }
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
             .onAppear { initialize() }
@@ -154,6 +155,7 @@ struct MealEditor: View {
 }
 
 struct FoodEditor: View {
+    @Environment(\.appSkin) private var skin
     let food: FoodItem
     let onSave: (FoodItem) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -182,7 +184,7 @@ struct FoodEditor: View {
                     } footer: { Text("换算假设食物配方和热量密度相同；也可直接修改热量。") }
                 }
             }
-            .scrollContentBackground(.hidden).background(Theme.background)
+            .scrollContentBackground(.hidden).background(skin.background)
             .navigationTitle("编辑食物").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
@@ -197,7 +199,9 @@ struct FoodEditor: View {
 }
 
 struct PhotoMealView: View {
+    @Environment(\.appSkin) private var skin
     @EnvironmentObject private var store: AppStore
+    @EnvironmentObject private var membership: MembershipModel
     @Environment(\.dismiss) private var dismiss
     let initialDate: Date
     @State private var selection: PhotosPickerItem?
@@ -225,6 +229,7 @@ struct PhotoMealView: View {
     @State private var submittedAnswers: [MealClarificationAnswer] = []
     @State private var showConfirmation = false
     @State private var continueAfterConfirmation = false
+    @State private var analysisID = UUID()
 
     var body: some View {
         NavigationStack {
@@ -286,7 +291,7 @@ struct PhotoMealView: View {
                         }
                         if let analysis, !running { resultCard(analysis).id("photo.result") }
                     }.padding(18)
-                }.background(Theme.background)
+                }.background(skin.background)
                     .onChange(of: running) { _, active in
                         if active { withAnimation { proxy.scrollTo("photo.status", anchor: .bottom) } }
                     }
@@ -330,7 +335,7 @@ struct PhotoMealView: View {
                 }
                 .sheet(isPresented: $showModel) {
                     NavigationStack {
-                        ModelSettingsView().toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showModel = false } } }
+                        CustomModelEntry().toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showModel = false } } }
                     }
                 }
                 .onDisappear { task?.cancel() }
@@ -347,7 +352,7 @@ struct PhotoMealView: View {
         } else {
             Card {
                 VStack(spacing: 14) {
-                    Image(systemName: "camera.viewfinder").font(.system(size: 44, weight: .light)).foregroundStyle(Theme.green)
+                    Image(systemName: "camera.viewfinder").font(.system(size: 44, weight: .light)).foregroundStyle(skin.accent)
                     Text("把这一餐拍下来").font(.title3.bold())
                     Text("拍全食物、保持光线明亮\n份量不确定，稍后也能修改")
                         .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -358,7 +363,7 @@ struct PhotoMealView: View {
     private func resultCard(_ result: MealAnalysis) -> some View {
         Card {
             Label("估算完成，核对后保存", systemImage: "checkmark.circle.fill")
-                .font(.subheadline.weight(.semibold)).foregroundStyle(Theme.green).accessibilityIdentifier("photo.result")
+                .font(.subheadline.weight(.semibold)).foregroundStyle(skin.accent).accessibilityIdentifier("photo.result")
             HStack(alignment: .firstTextBaseline) {
                 Text("\(Int(result.items.reduce(0) { $0 + $1.estimatedKcal }.rounded()))")
                     .font(.system(size: 38, weight: .bold, design: .rounded))
@@ -379,7 +384,7 @@ struct PhotoMealView: View {
             Text(result.summary).font(.subheadline).foregroundStyle(.secondary)
             if result.portionBasis == "consumed" {
                 Label("已按说明折算实际摄入，核对时可保留「全部」。", systemImage: "checkmark.circle")
-                    .font(.caption).foregroundStyle(Theme.green)
+                    .font(.caption).foregroundStyle(skin.accent)
             }
             DisclosureGroup("查看估算依据") {
                 VStack(alignment: .leading, spacing: 8) {
@@ -423,6 +428,7 @@ struct PhotoMealView: View {
     }
     private func begin() {
         guard store.service.isValid else { error = "请先在“我的 → NAS 账号”登录。"; return }
+        analysisID = UUID()
         if !store.snapshot.aiConsent { consent = true } else { run() }
     }
     private func resetConfirmation() {
@@ -445,7 +451,7 @@ struct PhotoMealView: View {
         task = Task { @MainActor in
             defer { running = false }
             do {
-                let response = try await AIClient(configuration: store.service).meal(image: imageData, note: note, answers: answers) { update in
+                let response = try await AIClient(configuration: store.service).meal(image: imageData, note: note, answers: answers, analysisID: analysisID) { update in
                     progress = update
                     if history.last?.stage != update.stage { history.append(update) }
                 }
@@ -462,6 +468,7 @@ struct PhotoMealView: View {
                     }
                     resetConfirmation()
                     analysis = response
+                    Task { await membership.refresh() }
                 }
             } catch is CancellationError { cancelled = true }
             catch { self.error = error.localizedDescription }

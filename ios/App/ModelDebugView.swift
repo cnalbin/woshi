@@ -4,6 +4,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 struct ModelDebugView: View {
+    @Environment(\.appSkin) private var skin
     let configuration: AIConfigurationDraft
     let service: ServiceConfiguration
 
@@ -114,7 +115,7 @@ struct ModelDebugView: View {
                     if let valid = result.formatValid {
                         Label(valid ? "通过正式分析格式校验" : "未通过正式分析格式校验",
                               systemImage: valid ? "checkmark.circle" : "exclamationmark.circle")
-                            .foregroundStyle(valid ? Theme.green : Theme.orange)
+                            .foregroundStyle(valid ? skin.accent : Theme.orange)
                     }
                     if let tokens = result.usage["total_tokens"] {
                         LabeledContent("Tokens", value: "\(tokens)")
@@ -126,7 +127,7 @@ struct ModelDebugView: View {
                         .accessibilityIdentifier("debug.output")
                 }
             }
-        }.scrollContentBackground(.hidden).background(Theme.background)
+        }.scrollContentBackground(.hidden).background(skin.background)
             .navigationTitle("调试模型").navigationBarTitleDisplayMode(.inline)
             .task(id: imageSelection) {
                 guard let imageSelection else { loadingPhoto = false; return }

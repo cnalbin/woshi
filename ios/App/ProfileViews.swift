@@ -258,7 +258,7 @@ struct SettingsView: View {
                         Divider()
                         NavigationLink { HealthSettingsView() } label: {
                             settingsRow("苹果健康", symbol: "heart", detail: health.hasRequested ? "检查权限" : "连接", iconColor: .red)
-                        }
+                        }.accessibilityIdentifier("health.settings")
                     }.buttonStyle(.plain)
                     Card {
                         Button { editProfile = true } label: {

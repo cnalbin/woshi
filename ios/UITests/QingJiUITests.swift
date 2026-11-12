@@ -64,6 +64,14 @@ final class QingJiUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["app.build"].waitForExistence(timeout: 5))
         capture("05-我的")
         verifyFreeMembership(in: app)
+        let healthSettings = app.buttons["health.settings"]
+        reveal(healthSettings, in: app)
+        healthSettings.tap()
+        XCTAssertTrue(app.navigationBars["苹果健康"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["步数"].exists)
+        XCTAssertTrue(app.switches["体重"].exists)
+        capture("26-健康同步设置")
+        app.navigationBars.buttons.firstMatch.tap()
         let metabolism = app.buttons["metabolism.open"]
         reveal(metabolism, in: app)
         metabolism.tap()
@@ -154,6 +162,13 @@ final class QingJiUITests: XCTestCase {
         reveal(appearance, in: app)
         appearance.tap()
         XCTAssertTrue(app.buttons["skin.orange"].waitForExistence(timeout: 5))
+        let icons = app.buttons["App 图标"]
+        reveal(icons, in: app)
+        icons.tap()
+        XCTAssertTrue(app.navigationBars["App 图标"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["浅紫"].exists)
+        capture("27-会员图标")
+        app.navigationBars.buttons.firstMatch.tap()
         capture("18-外观")
         reveal(app.buttons["skin.orange"], in: app)
         app.buttons["skin.orange"].tap()

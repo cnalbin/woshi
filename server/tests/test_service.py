@@ -3,6 +3,8 @@ import base64
 import hashlib
 import json
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
@@ -192,6 +194,52 @@ def test_timeout_releases_concurrency_slot(fixture):
         assert "TIMEOUT" in client.post("/v1/analyze/metabolism", json=PROFILE).text
         assert app.state.active == 0
         assert "TIMEOUT" in client.post("/v1/analyze/metabolism", json=PROFILE).text
+
+
+def test_cancel_releases_active_analysis_and_allows_immediate_retry(fixture):
+    started = threading.Event()
+    async def model(_):
+        started.set()
+        await asyncio.sleep(30)
+        return reply(AI_RESULT)
+
+    client, app = fixture(model, max_concurrent_requests=1, membership_enabled=True)
+    with client, ThreadPoolExecutor(max_workers=1) as pool:
+        analysis_id = str(uuid4())
+        work = pool.submit(client.post, "/v1/analyze/metabolism", json=PROFILE,
+                           headers={"X-Analysis-ID": analysis_id})
+        assert started.wait(5)
+        assert app.state.active == 1
+        cancel = client.post(f"/v1/analyze/{analysis_id}/cancel")
+        assert cancel.status_code == 200
+        work.result(timeout=5)
+        assert app.state.active == 0
+        assert client.get("/v1/membership").json()["remaining"] == 100
+        started.clear()
+        next_id = str(uuid4())
+        retry = pool.submit(client.post, "/v1/analyze/metabolism", json=PROFILE,
+                            headers={"X-Analysis-ID": next_id})
+        assert started.wait(5)
+        assert client.post(f"/v1/analyze/{next_id}/cancel").status_code == 200
+        retry.result(timeout=5)
+        assert app.state.active == 0
+
+
+def test_cancel_before_analysis_does_not_charge_and_other_request_can_run(fixture):
+    client, app = fixture(membership_enabled=True, max_concurrent_requests=1)
+    with client:
+        analysis_id, request_id = str(uuid4()), str(uuid4())
+        assert client.post(f"/v1/analyze/{request_id}/cancel").status_code == 200
+        result = client.post("/v1/analyze/metabolism", json=PROFILE,
+                             headers={"X-Analysis-ID": analysis_id, "X-Request-ID": request_id})
+        assert result.status_code == 409
+        assert result.json()["code"] == "ANALYSIS_CANCELLED"
+        assert app.state.active == 0
+        assert client.get("/v1/membership").json()["remaining"] == 100
+        result = client.post("/v1/analyze/metabolism", json=PROFILE,
+                             headers={"X-Analysis-ID": analysis_id, "X-Request-ID": str(uuid4())})
+        assert "event: result" in result.text
+        assert client.get("/v1/membership").json()["remaining"] == 99
 
 
 def example():

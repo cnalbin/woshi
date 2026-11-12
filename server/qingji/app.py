@@ -177,6 +177,8 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
     app.state.accounts = accounts
     app.state.memberships = memberships
     app.state.active = 0
+    app.state.analysis_tasks = {}
+    app.state.cancelled_analyses = {}
     app.state.quota_started = time.monotonic()
     app.state.quota_count = 0
     login_window = time.monotonic()
@@ -444,6 +446,12 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
 
     async def analyze(kind: str, request: Request):
         owner = request.state.owner
+        raw_id = request.headers.get("X-Request-ID") or request.headers.get("X-Analysis-ID")
+        try:
+            analysis_id = UUID(raw_id).hex if raw_id else uuid4().hex
+        except ValueError:
+            raise StorageError(400, "INVALID_ANALYSIS_ID", "分析编号无效，请重新开始。") from None
+        key = (owner, analysis_id)
         source = (await asyncio.to_thread(memberships.status, owner))["model"] if settings.membership_enabled else None
         confirmation_flow = False
         refining = False
@@ -469,14 +477,18 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
         credentials = await asyncio.to_thread(providers.credentials, owner, kind, source)
         slot = None
         if source == "builtIn":
-            raw_id = request.headers.get("X-Analysis-ID")
             fingerprint_content = (value.imageBase64, value.note) if kind == "meal" else content
             fingerprint = hashlib.sha256(json.dumps((kind, credentials[0], credentials[2], fingerprint_content)).encode()).hexdigest()
             try:
-                job_id = UUID(raw_id).hex if raw_id else fingerprint if confirmation_flow else uuid4().hex
+                job_header = request.headers.get("X-Analysis-ID")
+                job_id = UUID(job_header).hex if job_header else fingerprint if confirmation_flow else uuid4().hex
             except ValueError:
                 raise StorageError(400, "INVALID_ANALYSIS_ID", "分析编号无效，请重新开始。") from None
             slot = await asyncio.to_thread(memberships.reserve, owner, job_id, fingerprint, answer_hash)
+        if app.state.cancelled_analyses.pop(key, None) is not None:
+            if slot:
+                await asyncio.to_thread(memberships.settle, owner, slot)
+            raise StorageError(409, "ANALYSIS_CANCELLED", "本次分析已取消。")
         try:
             if slot is None or slot.cached is None:
                 begin_analysis()
@@ -498,8 +510,11 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
                     message = "AI 正在结合你的答案重新估算"
                 yield event("progress", {"stage": "analyzing", "message": message})
                 task = asyncio.create_task(asyncio.wait_for(provider(kind, content, credentials, protocol), timeout=settings.request_timeout_seconds))
+                app.state.analysis_tasks[key] = task
+                if app.state.cancelled_analyses.pop(key, None) is not None:
+                    task.cancel()
                 while not task.done():
-                    done, _ = await asyncio.wait({task}, timeout=10)
+                    done, _ = await asyncio.wait({task}, timeout=1)
                     if not done:
                         yield ": keepalive\n\n"
                 result = await task
@@ -538,14 +553,34 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
                     task.cancel()
                     await asyncio.gather(task, return_exceptions=True)
                 app.state.active -= 1
-                if slot and not settled:
-                    await asyncio.shield(asyncio.to_thread(memberships.settle, owner, slot))
+                try:
+                    if slot and not settled:
+                        await asyncio.shield(asyncio.to_thread(memberships.settle, owner, slot))
+                finally:
+                    app.state.analysis_tasks.pop(key, None)
         return StreamingResponse(generate(), media_type="text/event-stream", headers={
             "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
 
     @app.post("/v1/analyze/meal")
     async def analyze_meal(request: Request):
         return await analyze("meal", request)
+
+    @app.post("/v1/analyze/{analysis_id}/cancel")
+    async def cancel_analysis(analysis_id: UUID, request: Request):
+        key = (request.state.owner, analysis_id.hex)
+        now = time.monotonic()
+        app.state.cancelled_analyses = {k: expiry for k, expiry in app.state.cancelled_analyses.items() if expiry > now}
+        task = app.state.analysis_tasks.get(key)
+        if task is not None:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            for _ in range(100):
+                if key not in app.state.analysis_tasks:
+                    break
+                await asyncio.sleep(0.02)
+        else:
+            app.state.cancelled_analyses[key] = now + 180
+        return {"status": "cancelled"}
 
     @app.post("/v1/analyze/metabolism")
     async def analyze_metabolism(request: Request):

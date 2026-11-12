@@ -232,6 +232,7 @@ struct PhotoMealView: View {
     @State private var note = ""
     @State private var loadingImage = false
     @State private var running = false
+    @State private var cancelling = false
     @State private var task: Task<Void, Never>?
     @State private var progress = AnalysisProgress(stage: "uploading", message: "正在发送本次照片")
     @State private var history: [AnalysisProgress] = []
@@ -250,6 +251,7 @@ struct PhotoMealView: View {
     @State private var showConfirmation = false
     @State private var continueAfterConfirmation = false
     @State private var analysisID = UUID()
+    @State private var requestID = UUID()
 
     var body: some View {
         NavigationStack {
@@ -283,7 +285,7 @@ struct PhotoMealView: View {
                         }
                         }
                         if running {
-                            AnalysisStatusView(progress: progress, startedAt: started, history: history, photoAnalysis: true) { task?.cancel() }
+                            AnalysisStatusView(progress: progress, startedAt: started, history: history, photoAnalysis: true) { cancelAnalysis() }
                                 .id("photo.status")
                         } else if !pendingQuestions.isEmpty {
                             Card {
@@ -292,9 +294,9 @@ struct PhotoMealView: View {
                                 Button("查看待确认项") { showConfirmation = true }
                                     .accessibilityIdentifier("photo.confirmation.open")
                                 if !submittedAnswers.isEmpty {
-                                    Button("按已填答案重试") { run(answers: submittedAnswers) }.buttonStyle(PrimaryButtonStyle())
+                                    Button("按已填答案重试") { run(answers: submittedAnswers) }.buttonStyle(PrimaryButtonStyle()).disabled(cancelling)
                                 }
-                                Button("重新识别照片") { resetConfirmation(); begin() }.font(.caption)
+                                Button("重新识别照片") { resetConfirmation(); begin() }.font(.caption).disabled(cancelling)
                             }
                         }
                         if cancelled && !running {
@@ -304,6 +306,7 @@ struct PhotoMealView: View {
                                 Button("改为手动记录") { analysis = nil; review = true }.font(.subheadline)
                             }
                         }
+                        if cancelling { ProgressView("正在取消分析…").font(.subheadline) }
                         if let error, !running {
                             Card {
                                 Label("这次分析未完成", systemImage: "exclamationmark.circle").font(.headline).foregroundStyle(Theme.orange)
@@ -333,11 +336,11 @@ struct PhotoMealView: View {
                             EqualActions {
                                 Button("手动记录") { review = true }.buttonStyle(OutlineButtonStyle())
                                 Button("重新分析") { begin() }.buttonStyle(PrimaryButtonStyle())
-                                    .disabled(imageData == nil || loadingImage).accessibilityIdentifier("photo.start")
+                                    .disabled(imageData == nil || loadingImage || cancelling).accessibilityIdentifier("photo.start")
                             }
                         } else {
                             Button(cancelled ? "重新分析" : "开始 AI 分析") { begin() }
-                                .buttonStyle(PrimaryButtonStyle()).disabled(imageData == nil || loadingImage)
+                                .buttonStyle(PrimaryButtonStyle()).disabled(imageData == nil || loadingImage || cancelling)
                                 .accessibilityIdentifier("photo.start")
                         }
                     }
@@ -388,7 +391,7 @@ struct PhotoMealView: View {
                         CustomModelEntry().toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { showModel = false } } }
                     }
                 }
-                .onDisappear { task?.cancel() }
+                .onDisappear { if running { cancelAnalysis() } }
         }
     }
     @ViewBuilder private var photoPreview: some View {
@@ -472,9 +475,25 @@ struct PhotoMealView: View {
         } catch is CancellationError {} catch { self.error = error.localizedDescription }
     }
     private func begin() {
+        guard !cancelling else { return }
         guard store.service.isValid else { error = "请先在“我的 → NAS 账号”登录。"; return }
         analysisID = UUID()
         if !store.snapshot.aiConsent { consent = true } else { run() }
+    }
+    private func cancelAnalysis() {
+        guard running, !cancelling else { return }
+        cancelling = true
+        let id = requestID
+        let configuration = store.service
+        task?.cancel()
+        Task { @MainActor in
+            defer { cancelling = false }
+            do {
+                _ = try await CloudClient(configuration: configuration).request("v1/analyze/\(id.uuidString)/cancel", method: "POST", timeout: 12)
+            } catch {
+                self.error = "取消请求未确认，请稍候再试。"
+            }
+        }
     }
     private func resetConfirmation() {
         pendingQuestions = []
@@ -489,14 +508,15 @@ struct PhotoMealView: View {
         run(answers: submittedAnswers)
     }
     private func run(answers: [MealClarificationAnswer] = []) {
-        guard !running, !loadingImage, let imageData else { return }
+        guard !running, !cancelling, !loadingImage, let imageData else { return }
+        requestID = UUID()
         running = true; error = nil; cancelled = false; analysis = nil; started = Date()
         progress = .init(stage: "uploading", message: answers.isEmpty ? "正在发送本次照片与补充说明" : "正在提交你确认的信息")
         history = [progress]
         task = Task { @MainActor in
             defer { running = false }
             do {
-                let response = try await AIClient(configuration: store.service).meal(image: imageData, note: note, answers: answers, analysisID: analysisID) { update in
+                let response = try await AIClient(configuration: store.service).meal(image: imageData, note: note, answers: answers, analysisID: analysisID, requestID: requestID) { update in
                     progress = update
                     if history.last?.stage != update.stage { history.append(update) }
                 }

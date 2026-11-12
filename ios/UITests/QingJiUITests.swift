@@ -8,7 +8,7 @@ final class QingJiUITests: XCTestCase {
                                 "-serviceURL", "http://localhost:8787", "-uiTestPhoto"]
         app.launch()
         XCTAssertTrue(app.staticTexts["app.build"].waitForExistence(timeout: 8))
-        XCTAssertEqual(app.staticTexts["app.build"].label, "版本 0.10.0 · 构建 12")
+        XCTAssertEqual(app.staticTexts["app.build"].label, "版本 0.10.1 · 构建 13")
         capture("00-注册与版本信息")
         login("registered-user", registering: true, in: app)
         let profile = app.buttons["profile.open"]

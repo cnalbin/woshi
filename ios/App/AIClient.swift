@@ -75,7 +75,7 @@ struct ServiceError: Codable {
 struct AIClient {
     let configuration: ServiceConfiguration
 
-    func meal(image: Data, note: String, answers: [MealClarificationAnswer] = [], analysisID: UUID,
+    func meal(image: Data, note: String, answers: [MealClarificationAnswer] = [], analysisID: UUID, requestID: UUID,
               progress: @escaping @MainActor (AnalysisProgress) -> Void) async throws -> MealAnalysis {
         struct Input: Encodable {
             let imageBase64: String
@@ -84,7 +84,7 @@ struct AIClient {
             let answers: [MealClarificationAnswer]
         }
         let input = Input(imageBase64: image.base64EncodedString(), note: note, answers: answers)
-        return try await request(path: "v1/analyze/meal", input: input, analysisID: analysisID, progress: progress)
+        return try await request(path: "v1/analyze/meal", input: input, analysisID: analysisID, requestID: requestID, progress: progress)
     }
 
     func metabolism(profile: Profile, progress: @escaping @MainActor (AnalysisProgress) -> Void) async throws -> MetabolismResponse {
@@ -93,7 +93,7 @@ struct AIClient {
             input: Input(sex: profile.sex.rawValue, age: profile.age, heightCM: profile.heightCM, weightKG: profile.weightKG), progress: progress)
     }
 
-    private func request<Input: Encodable, Output: Decodable>(path: String, input: Input, analysisID: UUID = UUID(),
+    private func request<Input: Encodable, Output: Decodable>(path: String, input: Input, analysisID: UUID = UUID(), requestID: UUID = UUID(),
         progress: @escaping @MainActor (AnalysisProgress) -> Void) async throws -> Output {
         guard configuration.isValid, let base = URL(string: configuration.baseURL) else {
             throw AIError.message("请先在“我的 → NAS 账号”登录。")
@@ -105,6 +105,7 @@ struct AIClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         request.setValue(analysisID.uuidString, forHTTPHeaderField: "X-Analysis-ID")
+        request.setValue(requestID.uuidString, forHTTPHeaderField: "X-Request-ID")
         request.httpBody = try JSONEncoder().encode(input)
         let sessionConfiguration = URLSessionConfiguration.ephemeral
         sessionConfiguration.timeoutIntervalForRequest = 150

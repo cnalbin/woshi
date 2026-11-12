@@ -248,6 +248,8 @@ final class QingJiUITests: XCTestCase {
         capture("11-AI处理进度")
         cancel.tap()
         XCTAssertTrue(app.staticTexts["photo.cancelled"].waitForExistence(timeout: 10))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: start)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 15), .completed)
         reveal(start, in: app)
         start.tap()
         let confirmation = app.navigationBars["确认食物信息"]

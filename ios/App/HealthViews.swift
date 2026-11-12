@@ -23,7 +23,7 @@ struct HealthSettingsView: View {
                             if enabled { selected.insert(metric.rawValue) } else { selected.remove(metric.rawValue) }
                         })) {
                             Label(metric.label, systemImage: metric.symbol)
-                        }.tint(skin.accent).frame(minHeight: 44)
+                        }.tint(skin.accent).frame(minHeight: 44).accessibilityIdentifier("health.metric.\(metric.rawValue)")
                         if metric != HealthMetric.allCases.last { Divider() }
                     }
                 }

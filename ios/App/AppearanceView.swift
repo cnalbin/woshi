@@ -126,7 +126,7 @@ struct AppearanceView: View {
                 }.padding(.top, 8)
                 NavigationLink { AppIconSettingsView() } label: {
                     Card { HStack { Label("App 图标", systemImage: "app.badge"); Spacer(); Text("会员专享").font(.caption).foregroundStyle(.secondary); Image(systemName: "chevron.right") } }
-                }.buttonStyle(.plain)
+                }.buttonStyle(.plain).accessibilityIdentifier("icons.open")
             }.padding(18)
         }.background(skin.background).subpageNavigation(title: "外观")
             .task { await membership.refresh() }

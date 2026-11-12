@@ -1,6 +1,38 @@
 import Foundation
 import HealthKit
 
+enum HealthMetric: String, CaseIterable, Identifiable {
+    case activity, steps, weight, sleep, heartRate
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .activity: "活动能量"
+        case .steps: "步数"
+        case .weight: "体重"
+        case .sleep: "睡眠"
+        case .heartRate: "心率"
+        }
+    }
+    var symbol: String {
+        switch self {
+        case .activity: "flame"
+        case .steps: "figure.walk"
+        case .weight: "scalemass"
+        case .sleep: "bed.double"
+        case .heartRate: "heart"
+        }
+    }
+    var type: HKObjectType? {
+        switch self {
+        case .activity: HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)
+        case .steps: HKQuantityType.quantityType(forIdentifier: .stepCount)
+        case .weight: HKQuantityType.quantityType(forIdentifier: .bodyMass)
+        case .sleep: HKCategoryType.categoryType(forIdentifier: .sleepAnalysis)
+        case .heartRate: HKQuantityType.quantityType(forIdentifier: .heartRate)
+        }
+    }
+}
+
 @MainActor
 final class HealthService: ObservableObject {
     @Published var activeKcal: Double?
@@ -9,7 +41,9 @@ final class HealthService: ObservableObject {
     @Published var refreshing = false
     @Published private(set) var observation: ActivityDay?
     @Published private(set) var hasRequested: Bool
+    @Published private(set) var selected: Set<String>
     private let preference: String
+    private let selectionsKey: String
     private let store = HKHealthStore()
     private var observer: HKObserverQuery?
     private var selectedDay = Date()
@@ -17,10 +51,106 @@ final class HealthService: ObservableObject {
 
     init(workspaceID: String) {
         preference = workspaceID.isEmpty ? "healthRequested" : "healthRequested.\(workspaceID)"
+        selectionsKey = "healthMetrics.\(workspaceID)"
         hasRequested = UserDefaults.standard.bool(forKey: preference)
+        selected = Set(UserDefaults.standard.stringArray(forKey: selectionsKey) ?? ["activity"])
     }
 
     var available: Bool { HKHealthStore.isHealthDataAvailable() }
+
+    func synchronize(_ selection: Set<String>, into appStore: AppStore) async {
+        guard available else { message = "当前设备不支持苹果健康"; return }
+        let types = Set(HealthMetric.allCases.filter { selection.contains($0.rawValue) }.compactMap(\.type))
+        do {
+            if !types.isEmpty { try await store.requestAuthorization(toShare: [], read: types) }
+            selected = selection
+            UserDefaults.standard.set(Array(selection).sorted(), forKey: selectionsKey)
+            hasRequested = true
+            UserDefaults.standard.set(true, forKey: preference)
+            if selection.contains("activity") {
+                observe()
+                await refresh(for: selectedDay)
+                appStore.saveActivities(await history())
+            }
+            let values = await metricHistory(selection)
+            if !Task.isCancelled { appStore.saveHealthMetrics(values) }
+            lastUpdated = Date()
+            message = "同步完成"
+        } catch { message = "同步未完成，请检查苹果健康设置" }
+    }
+
+    private func metricHistory(_ selection: Set<String>) async -> [HealthMetricRecord] {
+        let calendar = Calendar.current
+        guard let start = calendar.date(byAdding: .day, value: -730, to: calendar.startOfDay(for: Date())) else { return [] }
+        var result: [HealthMetricRecord] = []
+        for metric in HealthMetric.allCases where metric != .activity && selection.contains(metric.rawValue) {
+            if metric == .steps || metric == .heartRate {
+                result.append(contentsOf: await dailyStatistics(metric, start: start, calendar: calendar))
+                continue
+            }
+            guard let type = metric.type as? HKSampleType else { continue }
+            let samples: [HKSample] = await withCheckedContinuation { continuation in
+                let predicate = HKQuery.predicateForSamples(withStart: start, end: Date())
+                let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit,
+                                          sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)]) { _, samples, _ in
+                    continuation.resume(returning: samples ?? [])
+                }
+                store.execute(query)
+            }
+            var days: [String: [Double]] = [:]
+            var sleepIntervals: [String: [(Date, Date)]] = [:]
+            for sample in samples {
+                let key = ActivityDay.key(for: sample.endDate, timeZone: calendar.timeZone)
+                if let quantity = sample as? HKQuantitySample {
+                    let unit: HKUnit = metric == .weight ? .gramUnit(with: .kilo) : metric == .heartRate ? HKUnit.count().unitDivided(by: .minute()) : .count()
+                    days[key, default: []].append(quantity.quantity.doubleValue(for: unit))
+                } else if let category = sample as? HKCategorySample, metric == .sleep,
+                          category.value != HKCategoryValueSleepAnalysis.inBed.rawValue,
+                          category.value != HKCategoryValueSleepAnalysis.awake.rawValue {
+                    sleepIntervals[key, default: []].append((category.startDate, category.endDate))
+                }
+            }
+            for (day, intervals) in sleepIntervals {
+                var end = Date.distantPast
+                var duration = 0.0
+                for interval in intervals.sorted(by: { $0.0 < $1.0 }) {
+                    duration += max(0, interval.1.timeIntervalSince(max(end, interval.0)))
+                    end = max(end, interval.1)
+                }
+                days[day] = [duration / 3600]
+            }
+            for (day, values) in days where !values.isEmpty {
+                let value = metric == .weight ? values.last! : metric == .heartRate ? values.reduce(0, +) / Double(values.count) : values.reduce(0, +)
+                result.append(HealthMetricRecord(id: "\(metric.rawValue)|\(day)|\(calendar.timeZone.identifier)", day: day,
+                                                 timeZone: calendar.timeZone.identifier, metric: metric.rawValue,
+                                                 value: value, updatedAt: Date()))
+            }
+        }
+        return result
+    }
+
+    private func dailyStatistics(_ metric: HealthMetric, start: Date, calendar: Calendar) async -> [HealthMetricRecord] {
+        guard let type = metric.type as? HKQuantityType else { return [] }
+        let unit: HKUnit = metric == .steps ? .count() : HKUnit.count().unitDivided(by: .minute())
+        let options: HKStatisticsOptions = metric == .steps ? .cumulativeSum : .discreteAverage
+        return await withCheckedContinuation { continuation in
+            let predicate = HKQuery.predicateForSamples(withStart: start, end: Date())
+            let query = HKStatisticsCollectionQuery(quantityType: type, quantitySamplePredicate: predicate,
+                                                    options: options, anchorDate: start, intervalComponents: DateComponents(day: 1))
+            query.initialResultsHandler = { _, collection, _ in
+                var records: [HealthMetricRecord] = []
+                collection?.enumerateStatistics(from: start, to: Date()) { statistics, _ in
+                    let quantity = metric == .steps ? statistics.sumQuantity() : statistics.averageQuantity()
+                    guard let value = quantity?.doubleValue(for: unit) else { return }
+                    let day = ActivityDay.key(for: statistics.startDate, timeZone: calendar.timeZone)
+                    records.append(HealthMetricRecord(id: "\(metric.rawValue)|\(day)|\(calendar.timeZone.identifier)",
+                        day: day, timeZone: calendar.timeZone.identifier, metric: metric.rawValue, value: value, updatedAt: Date()))
+                }
+                continuation.resume(returning: records)
+            }
+            store.execute(query)
+        }
+    }
 
     func connect() async {
         guard available else { message = "当前设备不支持苹果健康"; return }
@@ -36,7 +166,7 @@ final class HealthService: ObservableObject {
     }
 
     func start() {
-        if hasRequested && available { observe() }
+        if hasRequested && available && selected.contains("activity") { observe() }
     }
 
     func stop() {
@@ -61,7 +191,7 @@ final class HealthService: ObservableObject {
     }
 
     func history() async -> [ActivityDay] {
-        guard hasRequested, available,
+        guard hasRequested, available, selected.contains("activity"),
               let type = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned),
               let start = Calendar.current.date(byAdding: .day, value: -730, to: Date()) else { return [] }
         let calendar = Calendar.current
@@ -89,7 +219,7 @@ final class HealthService: ObservableObject {
         let sameDay = Calendar.current.isDate(selectedDay, inSameDayAs: day)
         if refreshing && sameDay { return }
         selectedDay = day
-        guard hasRequested, available,
+        guard hasRequested, available, selected.contains("activity"),
               let type = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else {
             activeKcal = nil
             return

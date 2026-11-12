@@ -62,6 +62,21 @@ def test_deepseek_sse_contract(fixture):
     assert "1700" in response.text
 
 
+def test_health_metrics_survive_older_client_backup(fixture):
+    client, _ = fixture()
+    with client:
+        metric = {"id": "weight|2026-11-12|Asia/Shanghai", "day": "2026-11-12",
+                  "timeZone": "Asia/Shanghai", "metric": "weight", "value": 62.3, "updatedAt": 100.0}
+        snapshot = {"schemaVersion": 1, "meals": [], "activityDays": [], "healthMetrics": [metric]}
+        saved = client.put("/v1/backup", json={"expectedRevision": 0, "snapshot": snapshot, "photos": []})
+        assert saved.status_code == 200
+        assert client.get("/v1/backup").json()["snapshot"]["healthMetrics"] == [metric]
+        del snapshot["healthMetrics"]
+        saved = client.put("/v1/backup", json={"expectedRevision": 1, "snapshot": snapshot, "photos": []})
+        assert saved.status_code == 200
+        assert client.get("/v1/backup").json()["snapshot"]["healthMetrics"] == [metric]
+
+
 def test_membership_quota_confirmation_and_account_permissions(fixture, monkeypatch):
     model_calls = []
 

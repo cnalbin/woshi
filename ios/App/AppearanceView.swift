@@ -124,6 +124,9 @@ struct AppearanceView: View {
                         }.labelsHidden().pickerStyle(.menu)
                     }
                 }.padding(.top, 8)
+                NavigationLink { AppIconSettingsView() } label: {
+                    Card { HStack { Label("App 图标", systemImage: "app.badge"); Spacer(); Text("会员专享").font(.caption).foregroundStyle(.secondary); Image(systemName: "chevron.right") } }
+                }.buttonStyle(.plain)
             }.padding(18)
         }.background(skin.background).subpageNavigation(title: "外观")
             .task { await membership.refresh() }
@@ -153,6 +156,67 @@ struct AppearanceView: View {
                 .background(Theme.card, in: RoundedRectangle(cornerRadius: 5))
         }.padding(8).frame(width: 118, height: 119).background(theme.background, in: RoundedRectangle(cornerRadius: 12))
             .accessibilityHidden(true)
+    }
+}
+
+struct AppIconSettingsView: View {
+    @Environment(\.appSkin) private var skin
+    @EnvironmentObject private var membership: MembershipModel
+    @State private var current = UIApplication.shared.alternateIconName
+    @State private var busy = false
+    @State private var error: String?
+    private let names = ["浅绿", "樱花粉", "香槟金", "天空蓝", "浅紫"]
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                Card {
+                    Text("选择 App 图标").font(.headline)
+                    Text("会员可切换桌面图标。选择后会显示在 iPhone 主屏幕。")
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                iconRow(name: nil, title: "轻记经典", image: "BrandIcon")
+                ForEach(0..<names.count, id: \.self) { index in
+                    let name = String(format: "Member%02d", index + 1)
+                    iconRow(name: name, title: names[index], image: name + "Preview")
+                }
+                if let error { Text(error).font(.footnote).foregroundStyle(.secondary) }
+            }.padding(Theme.gutter)
+        }.background(skin.background).subpageNavigation(title: "App 图标")
+            .task { await membership.refresh() }
+    }
+
+    private func iconRow(name: String?, title: String, image: String) -> some View {
+        let unlocked = name == nil || membership.status?.active == true || membership.status?.enabled == false
+        return Card {
+            HStack(spacing: 14) {
+                Image(image).resizable().scaledToFill().frame(width: 62, height: 62)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title).font(.headline)
+                    if name != nil { Text("会员专享").font(.caption).foregroundStyle(.secondary) }
+                }
+                Spacer()
+                if name == current { Text("当前使用").font(.caption).foregroundStyle(skin.accent) }
+                else if unlocked {
+                    Button("使用") { change(to: name) }.disabled(busy).frame(minWidth: 60, minHeight: 44)
+                } else {
+                    NavigationLink("开通会员") { MembershipPurchaseView() }.font(.subheadline.weight(.semibold))
+                }
+            }
+        }
+    }
+
+    private func change(to name: String?) {
+        guard UIApplication.shared.supportsAlternateIcons else { error = "当前设备不支持切换图标。"; return }
+        busy = true
+        UIApplication.shared.setAlternateIconName(name) { result in
+            Task { @MainActor in
+                busy = false
+                if let result { error = result.localizedDescription }
+                else { current = UIApplication.shared.alternateIconName; error = nil }
+            }
+        }
     }
 }
 

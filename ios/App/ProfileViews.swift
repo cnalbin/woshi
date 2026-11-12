@@ -256,7 +256,7 @@ struct SettingsView: View {
                             settingsRow("数据同步", symbol: "icloud", detail: store.cloudMessage == "已同步" ? "已同步" : "查看状态")
                         }.accessibilityIdentifier("backup.open")
                         Divider()
-                        Button { Task { await health.connect() } } label: {
+                        NavigationLink { HealthSettingsView() } label: {
                             settingsRow("苹果健康", symbol: "heart", detail: health.hasRequested ? "检查权限" : "连接", iconColor: .red)
                         }
                     }.buttonStyle(.plain)

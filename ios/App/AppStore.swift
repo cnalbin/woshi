@@ -168,6 +168,21 @@ final class AppStore: ObservableObject {
         saveActivities([value])
     }
 
+    func saveHealthMetrics(_ values: [HealthMetricRecord]) {
+        guard !values.isEmpty else { return }
+        var indexed = Dictionary(snapshot.healthMetrics.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })
+        var changed = false
+        for value in values where value.value.isFinite && value.value >= 0 {
+            if let old = indexed[value.id], abs(old.value - value.value) < 0.01 { continue }
+            indexed[value.id] = value
+            changed = true
+        }
+        guard changed else { return }
+        var next = snapshot
+        next.healthMetrics = indexed.values.sorted { $0.id < $1.id }
+        do { try commit(next) } catch { errorMessage = error.localizedDescription }
+    }
+
     func saveActivities(_ values: [ActivityDay]) {
         guard !values.isEmpty else { return }
         var indexed = Dictionary(snapshot.activityDays.map { ($0.id, $0) }, uniquingKeysWith: { _, new in new })

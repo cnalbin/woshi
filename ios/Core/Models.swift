@@ -154,11 +154,21 @@ struct AppSnapshot: Codable, Equatable {
     var meals: [Meal] = []
     var aiConsent: Bool = false
     var activityDays: [ActivityDay] = []
+    var healthMetrics: [HealthMetricRecord] = []
 
     func meals(on day: Date, calendar: Calendar = .current) -> [Meal] {
         meals.filter { calendar.isDate($0.consumedAt, inSameDayAs: day) }
             .sorted { $0.consumedAt < $1.consumedAt }
     }
+}
+
+struct HealthMetricRecord: Codable, Equatable, Identifiable {
+    var id: String
+    var day: String
+    var timeZone: String
+    var metric: String
+    var value: Double
+    var updatedAt: Date
 }
 
 struct ActivityDay: Codable, Equatable, Identifiable {
@@ -177,7 +187,7 @@ struct ActivityDay: Codable, Equatable, Identifiable {
 }
 
 extension AppSnapshot {
-    enum CodingKeys: String, CodingKey { case schemaVersion, profile, metabolism, meals, aiConsent, activityDays }
+    enum CodingKeys: String, CodingKey { case schemaVersion, profile, metabolism, meals, aiConsent, activityDays, healthMetrics }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         schemaVersion = try values.decode(Int.self, forKey: .schemaVersion)
@@ -186,6 +196,7 @@ extension AppSnapshot {
         meals = try values.decode([Meal].self, forKey: .meals)
         aiConsent = try values.decodeIfPresent(Bool.self, forKey: .aiConsent) ?? false
         activityDays = try values.decodeIfPresent([ActivityDay].self, forKey: .activityDays) ?? []
+        healthMetrics = try values.decodeIfPresent([HealthMetricRecord].self, forKey: .healthMetrics) ?? []
     }
 }
 

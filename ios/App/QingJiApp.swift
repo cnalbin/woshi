@@ -45,10 +45,9 @@ struct AccountWorkspace: View {
                     do { try await Task.sleep(for: .seconds(30)) } catch { return }
                 }
             }
-            .task(id: health.hasRequested) {
+            .task {
                 if health.hasRequested {
-                    let values = await health.history()
-                    if !Task.isCancelled { store.saveActivities(values) }
+                    await health.synchronize(health.selected, into: store)
                 }
             }
             .onDisappear { health.stop(); store.cancelCloudBackup() }

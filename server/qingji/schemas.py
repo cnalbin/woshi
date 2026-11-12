@@ -68,18 +68,28 @@ class ActivityDay(Model):
     updatedAt: Number
 
 
+class HealthMetric(Model):
+    id: str = Field(min_length=1, max_length=160)
+    day: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    timeZone: str = Field(min_length=1, max_length=100)
+    metric: Literal["steps", "weight", "sleep", "heartRate"]
+    value: Annotated[Number, Field(ge=0, le=1000000)]
+    updatedAt: Number
+
+
 class Snapshot(Model):
     schemaVersion: Literal[1] = 1
     profile: Profile | None = None
     metabolism: Assessment | None = None
     meals: list[Meal] = Field(default_factory=list, max_length=10000)
     activityDays: list[ActivityDay] = Field(default_factory=list, max_length=20000)
+    healthMetrics: list[HealthMetric] | None = Field(default=None, max_length=20000)
     # Permission is device-specific and deliberately not restored on another phone.
     aiConsent: StrictBool = False
 
     @model_validator(mode="after")
     def unique_records(self):
-        for values in [self.meals, self.activityDays]:
+        for values in [self.meals, self.activityDays, self.healthMetrics or []]:
             ids = [str(value.id) for value in values]
             if len(ids) != len(set(ids)):
                 raise ValueError("Duplicate record IDs")

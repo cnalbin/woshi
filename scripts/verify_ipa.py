@@ -25,6 +25,8 @@ def verify(filename, version=None, build=None, display_name=None, revision=None)
         assert info["CFBundleSupportedPlatforms"] == ["iPhoneOS"]
         assert info["MinimumOSVersion"] == "17.0"
         assert prefix + "Assets.car" in names
+        alternates = info.get("CFBundleIcons", {}).get("CFBundleAlternateIcons", {})
+        assert all(f"Member{index:02}" in alternates for index in range(1, 6)), "Missing alternate icon declarations"
         assert not any(n.endswith((".env", ".p12", ".mobileprovision")) for n in names)
         print(f"Verified unsigned iPhoneOS ARM64 IPA: {info['CFBundleIdentifier']} "
               f"{info['CFBundleShortVersionString']} ({info['CFBundleVersion']}) · {info['CFBundleDisplayName']}")

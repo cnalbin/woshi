@@ -66,7 +66,7 @@ class Storage:
             snapshot = None
             if state["revision"]:
                 snapshot = {"schemaVersion": 1, "profile": None, "metabolism": None,
-                            "meals": [], "activityDays": [], "aiConsent": False}
+                            "meals": [], "activityDays": [], "healthMetrics": [], "aiConsent": False}
                 for row in rows:
                     if row["kind"] in ("profile", "metabolism"):
                         snapshot[row["kind"]] = row["payload"]
@@ -74,6 +74,8 @@ class Storage:
                         snapshot["meals"].append(row["payload"])
                     elif row["kind"] == "activity":
                         snapshot["activityDays"].append(row["payload"])
+                    elif row["kind"] == "health":
+                        snapshot["healthMetrics"].append(row["payload"])
             stamp = state["updated_at"]
             return {"revision": state["revision"], "updatedAt": stamp.replace(tzinfo=timezone.utc).isoformat() if stamp else None,
                     "snapshot": snapshot, "photos": [{"filename": r["filename"], "sha256": r["sha256"]} for r in refs
@@ -90,6 +92,8 @@ class Storage:
             rows.append({"owner": self.owner, "record_id": "metabolism", "kind": "metabolism", "payload": body["metabolism"]})
         for key, kind in [("meals", "meal"), ("activityDays", "activity")]:
             rows.extend({"owner": self.owner, "record_id": f"{kind}:{item['id']}", "kind": kind, "payload": item} for item in body[key])
+        if body["healthMetrics"] is not None:
+            rows.extend({"owner": self.owner, "record_id": f"health:{item['id']}", "kind": "health", "payload": item} for item in body["healthMetrics"])
         with self.engine.begin() as conn:
             state = conn.execute(select(states).where(states.c.owner == self.owner).with_for_update()).mappings().one()
             if state["revision"] != backup.expectedRevision:
@@ -99,7 +103,10 @@ class Storage:
                 existing = set(conn.execute(select(photos.c.sha256).where(photos.c.owner == self.owner, photos.c.sha256.in_(wanted))).scalars())
                 if wanted != existing or any(not (self.directory / digest).is_file() for digest in wanted):
                     raise StorageError(422, "MISSING_PHOTO", "部分照片尚未上传，备份未提交，请重试。")
-            conn.execute(delete(documents).where(documents.c.owner == self.owner))
+            deletion = delete(documents).where(documents.c.owner == self.owner)
+            if body["healthMetrics"] is None:
+                deletion = deletion.where(documents.c.kind != "health")
+            conn.execute(deletion)
             conn.execute(delete(manifest).where(manifest.c.owner == self.owner))
             conn.execute(insert(documents), rows)
             if backup.photos:

@@ -12,7 +12,7 @@
     <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSRequiresIPhoneOS</key><true/>
     <key>NSCameraUsageDescription</key><string>拍摄你主动选择记录的食物，用于 AI 热量估算。</string>
-    <key>NSHealthShareUsageDescription</key><string>读取活动能量以展示每日消耗，每日活动汇总会随当前账号自动同步到所连接的服务器。</string>
+    <key>NSHealthShareUsageDescription</key><string>读取你选择的活动能量、步数、体重、睡眠与心率，展示每日数据和趋势，并将每日汇总同步至当前账号。</string>
     <key>NSHealthUpdateUsageDescription</key><string>本版本不向苹果健康写入数据。</string>
     <key>UILaunchScreen</key><dict/>
     <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>

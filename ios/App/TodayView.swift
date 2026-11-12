@@ -26,6 +26,7 @@ struct TodayView: View {
                         MetabolismCard(profile: profile, assessment: store.snapshot.metabolism) { metabolism = true }
                     }
                     activityCard
+                    HealthSummary(date: day)
                     mealList(meals)
                 }.padding(.horizontal, Theme.gutter).padding(.vertical, 10)
             }.background(skin.background)

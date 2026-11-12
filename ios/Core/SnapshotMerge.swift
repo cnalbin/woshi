@@ -24,6 +24,7 @@ enum SnapshotMerge {
         result.metabolism = try value(base.metabolism, local.metabolism, remote.metabolism)
         result.meals = try records(base.meals, local.meals, remote.meals).sorted { $0.id.uuidString < $1.id.uuidString }
         result.activityDays = try records(base.activityDays, local.activityDays, remote.activityDays).sorted { $0.id < $1.id }
+        result.healthMetrics = try records(base.healthMetrics, local.healthMetrics, remote.healthMetrics).sorted { $0.id < $1.id }
         return result
     }
 

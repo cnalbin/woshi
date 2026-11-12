@@ -67,6 +67,13 @@ final class HealthService: ObservableObject {
             UserDefaults.standard.set(Array(selection).sorted(), forKey: selectionsKey)
             hasRequested = true
             UserDefaults.standard.set(true, forKey: preference)
+            if !selection.contains("activity") {
+                if let observer { store.stop(observer) }
+                observer = nil
+                refreshGeneration = UUID()
+                refreshing = false
+                activeKcal = nil
+            }
             if selection.contains("activity") {
                 observe()
                 await refresh(for: selectedDay)
@@ -157,6 +164,8 @@ final class HealthService: ObservableObject {
         guard let type = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) else { return }
         do {
             try await store.requestAuthorization(toShare: [], read: [type])
+            selected.insert("activity")
+            UserDefaults.standard.set(Array(selected).sorted(), forKey: selectionsKey)
             hasRequested = true
             guard !Task.isCancelled else { return }
             UserDefaults.standard.set(true, forKey: preference)

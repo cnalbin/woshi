@@ -12,7 +12,7 @@ struct HealthSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Card(surface: skin.membershipBackground) {
-                    Label(health.hasRequested ? "已连接" : "连接苹果健康", systemImage: "heart.fill").font(.headline)
+                    Label(health.hasRequested ? "已设置苹果健康" : "连接苹果健康", systemImage: "heart.fill").font(.headline)
                     if let updated = health.lastUpdated { Text("最近同步 \(updated.formatted(date: .omitted, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
                     else { Text(health.message).font(.caption).foregroundStyle(.secondary) }
                 }
@@ -135,10 +135,11 @@ struct HealthTrendView: View {
     @EnvironmentObject private var health: HealthService
     @State var metric: HealthMetric
     @State private var period = TrendPeriod.month
+    @State private var anchor = Date()
 
     private var points: [HealthMetricRecord] {
         let calendar = Calendar.current
-        guard let interval = calendar.dateInterval(of: period.component, for: Date()) else { return [] }
+        guard let interval = calendar.dateInterval(of: period.component, for: anchor) else { return [] }
         if metric == .activity {
             return store.snapshot.activityDays.filter { $0.timeZone == calendar.timeZone.identifier }.compactMap { item in
                 guard let date = date(item.day), interval.contains(date) else { return nil }
@@ -151,6 +152,15 @@ struct HealthTrendView: View {
         ScrollView {
             VStack(spacing: 16) {
                 PageSegments(selection: $period, options: TrendPeriod.allCases.map { ($0.label, $0) }).frame(height: 34)
+                HStack {
+                    Button { move(-1) } label: { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
+                    Spacer()
+                    Text(period == .year ? anchor.formatted(.dateTime.year()) : anchor.formatted(.dateTime.year().month().day()))
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Button { move(1) } label: { Image(systemName: "chevron.right").frame(width: 44, height: 44) }
+                        .disabled((Calendar.current.dateInterval(of: period.component, for: anchor)?.end ?? Date()) > Date())
+                }
                 Card {
                     Picker("指标", selection: $metric) { ForEach(HealthMetric.allCases) { Text($0.label).tag($0) } }
                         .pickerStyle(.menu)
@@ -178,5 +188,8 @@ struct HealthTrendView: View {
         let formatter = DateFormatter(); formatter.calendar = Calendar(identifier: .gregorian)
         formatter.timeZone = .current; formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd"
         return formatter.date(from: value)
+    }
+    private func move(_ amount: Int) {
+        anchor = Calendar.current.date(byAdding: period.component, value: amount, to: anchor) ?? anchor
     }
 }

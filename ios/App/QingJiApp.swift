@@ -54,6 +54,9 @@ struct AccountWorkspace: View {
             .onChange(of: health.observation) { _, observation in
                 if let observation { store.saveActivity(observation) }
             }
+            .onChange(of: health.hasRequested) { _, requested in
+                if requested { Task { store.saveActivities(await health.history()) } }
+            }
             .onChange(of: scenePhase, initial: true) { _, phase in
                 if phase == .active {
                     store.scheduleCloudBackup()

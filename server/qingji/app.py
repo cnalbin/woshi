@@ -170,7 +170,7 @@ def create_app(settings: Settings, engine=None, ai_transport=None) -> FastAPI:
                 await asyncio.gather(cleaner, return_exceptions=True)
             await asyncio.to_thread(engine.dispose)
 
-    app = FastAPI(title="轻记 NAS API", version="0.9.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title="轻记 NAS API", version="0.10.0", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     legacy_token = settings.app_access_token.get_secret_value() if settings.enable_legacy_token else None
     app.add_middleware(Authentication, accounts=accounts, legacy_token=legacy_token)
     app.state.storage = storage
